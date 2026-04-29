@@ -1,0 +1,68 @@
+# Safety Model
+
+Network Assistant is local-first and intentionally conservative.
+
+## Local Network Restrictions
+
+- Scanning is limited to local/private networks.
+- Public IP scanning is blocked by safety policy.
+- Documentation fetching is explicit and disabled by default.
+
+## Command Allowlists
+
+- Read-only device commands are allowlisted by platform.
+- Dangerous patterns are blocked before command execution.
+- Snapshot commands are read-only and policy-checked.
+- `/export terse` is allowed for MikroTik snapshots; `/export file` and `/import` are blocked.
+
+## Planning Lifecycle
+
+Configuration changes use this lifecycle:
+
+```text
+plan -> review -> approve -> preflight -> execute -> verify -> save/rollback
+```
+
+The lifecycle exists to prevent accidental device changes.
+
+## Approval and Confirmation
+
+- Plans require human review and approval before execution.
+- Execution requires exact confirmation: `EXECUTE PLAN <id>`.
+- Cisco save requires exact confirmation: `SAVE CONFIG PLAN <id>`.
+- Rollback requires exact confirmation: `ROLLBACK PLAN <id>`.
+
+## Preflight
+
+Preflight verifies stored or refreshed read-only evidence before execution.
+
+- Plans with missing evidence warn or fail.
+- Plans with unsafe commands fail.
+- Plans with topology-aware high-risk warnings can be downgraded or blocked.
+
+## Snapshots
+
+- Real execution captures a pre-change snapshot before config commands are applied.
+- Execution is blocked if the pre-change snapshot fails.
+- Post-change and rollback snapshots are attempted and logged.
+- Snapshot export and restore guidance are informational only.
+
+## Verify and Rollback
+
+- Execution runs read-only post-checks.
+- Failed verification triggers automatic rollback where supported.
+- Manual rollback remains available through direct CLI confirmation.
+- RouterOS changes are persistent immediately, so rollback is especially important.
+
+## Agent and Chat Boundaries
+
+- Low-risk actions can run in agent mode.
+- Medium-risk actions require confirmation in agent mode.
+- High-risk actions such as execute/save/rollback are blocked from chat/agent and require direct CLI confirmation.
+
+## Integration Test Gates
+
+- Integration tests are skipped by default.
+- `RUN_INTEGRATION_TESTS=true` is required to run real lab integration tests.
+- `ALLOW_REAL_CONFIG_TESTS=true` is required for real config execution.
+- `ALLOW_REAL_DHCP_TESTS=true` is additionally required for real MikroTik DHCP execution.

@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "network-assistant"
+version = "1.0.0rc1"
+description = "Local-first network assistant CLI with safe diagnostics, planning, snapshots, and controlled execution."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "typer",
+  "rich",
+  "pydantic",
+  "pydantic-settings",
+  "sqlalchemy",
+  "netifaces",
+  "psutil",
+  "scapy",
+  "python-dotenv",
+  "python-nmap",
+  "cryptography",
+  "netmiko",
+  "httpx",
+  "fastapi",
+  "uvicorn",
+  "beautifulsoup4",
+  "readability-lxml",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+network-assistant = "main:app"
+nat = "main:app"
+
+[tool.setuptools]
+py-modules = ["main"]
+packages = ["app", "app.agent", "app.services"]
+
+[tool.network-assistant]
+display-version = "1.0.0-rc1"
