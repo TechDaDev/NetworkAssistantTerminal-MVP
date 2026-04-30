@@ -27,6 +27,7 @@ from app.services.lab_validation import lab_checklist, validate_lab_device, vali
 from app.services.llm_planner import LLMPlanner
 from app.services.manual_topology import add_manual_edge, add_manual_node, list_manual_edges, list_manual_nodes, list_manual_notes
 from app.services.network_detection import detect_local_network
+from app.services.nmap_tool import get_nmap_version, is_nmap_available, run_nmap_scan, save_nmap_results
 from app.services.scanner import scan_network
 from app.services.topology import build_topology_snapshot, explain_topology, export_topology_json, export_topology_mermaid, get_latest_topology, rebuild_topology_with_manual
 from app.services.topology_awareness import analyze_plan_topology_risk
@@ -152,6 +153,30 @@ def _execute_allowed_intent(intent: ParsedIntent, memory: SessionMemory, risk: s
         if scan is None:
             return AgentResult(name, risk, False, "No latest scan report is stored.", "python main.py scan")
         return AgentResult(name, risk, True, f"Latest scan: {scan.cidr}, {scan.live_hosts_count} live host(s).", "python main.py report")
+    if name == "nmap_check":
+        available = is_nmap_available()
+        message = "nmap is available." if available else "nmap is optional and not installed. Install with: sudo apt install nmap"
+        return AgentResult(name, risk, True, message, "nat nmap check", {"available": available, "version": get_nmap_version()})
+    if name == "nmap_scan_local":
+        target = detect_local_network().cidr
+        profile = args.get("profile") or "common-ports"
+        result = run_nmap_scan(target, str(profile))
+        save_nmap_results(result)
+        return AgentResult(name, risk, True, f"Nmap {result.profile} scan saved {result.live_hosts_count} host(s).", "nat devices", _nmap_result_data(result))
+    if name == "nmap_scan_host":
+        target = _require_arg(args, "target")
+        profile = args.get("profile") or "common-ports"
+        result = run_nmap_scan(target, str(profile))
+        save_nmap_results(result)
+        return AgentResult(name, risk, True, f"Nmap {result.profile} scan saved {result.live_hosts_count} host(s).", f"nat device {target}", _nmap_result_data(result))
+    if name == "nmap_scan_device":
+        target = _require_arg(args, "target")
+        if get_device_profile(target) is None:
+            return AgentResult(name, risk, False, f"Device {target} is not in inventory.", "nat devices")
+        profile = args.get("profile") or "service-light"
+        result = run_nmap_scan(target, str(profile))
+        save_nmap_results(result)
+        return AgentResult(name, risk, True, f"Nmap {result.profile} scan updated {target}.", f"nat device {target}", _nmap_result_data(result))
     if name == "scan_network":
         network = detect_local_network()
         scan = scan_network(network.cidr)
@@ -527,6 +552,9 @@ def _update_memory(intent: ParsedIntent, result: AgentResult, memory: SessionMem
     if "target_ip" in intent.args and intent.args["target_ip"] not in {None, "gateway"}:
         memory.last_device_ip = str(intent.args["target_ip"])
         memory.last_diagnostic_target = str(intent.args["target_ip"])
+    if "target" in intent.args and intent.args["target"]:
+        memory.last_device_ip = str(intent.args["target"])
+        memory.last_diagnostic_target = str(intent.args["target"])
     if "plan_id" in intent.args and intent.args["plan_id"]:
         memory.last_plan_id = int(intent.args["plan_id"])
     if result.action in {
@@ -632,6 +660,7 @@ def _as_tool_result(result: AgentResult) -> AgentToolResult:
 def _help_commands() -> dict[str, list[str]]:
     return {
         "Inventory": ["show devices", "show device 192.168.88.1", "latest report", "scan my network", "enrich devices"],
+        "Nmap": ["nmap check", "nmap scan local", "nmap scan local service light", "nmap scan 192.168.88.1", "nmap scan device 192.168.88.1"],
         "Diagnostics": ["diagnose network", "inspect 192.168.88.1", "diagnose connectivity 192.168.88.1", "show risky management ports"],
         "Topology": ["build topology", "show topology", "explain topology", "topology risk check plan 1", "export topology mermaid"],
         "Knowledge": ["knowledge search routeros ssh", "knowledge list", "ask summarize latest scan"],
@@ -654,4 +683,13 @@ def _help_commands() -> dict[str, list[str]]:
             "rollback plan 1",
             "Execution/save/rollback require direct CLI exact confirmation.",
         ],
+    }
+
+
+def _nmap_result_data(result) -> dict:
+    return {
+        "target": result.target,
+        "profile": result.profile,
+        "live_hosts_count": result.live_hosts_count,
+        "devices": [device.model_dump(mode="json") for device in result.devices],
     }

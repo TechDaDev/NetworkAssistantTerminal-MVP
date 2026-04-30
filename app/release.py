@@ -11,10 +11,11 @@ from sqlalchemy import inspect
 from app.config import BASE_DIR, settings
 from app.database import database_file_path, engine, init_db
 from app.services.lab_integration import integration_flags
+from app.services.nmap_tool import get_nmap_version
 from app.services.security import generate_credential_key
 
 
-DISPLAY_VERSION = "1.0.0-rc1"
+DISPLAY_VERSION = "1.0.0-rc2"
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8765
 REQUIRED_TABLES = {
@@ -151,7 +152,7 @@ def doctor() -> ReleaseCommandResult:
     checks.append(ReleaseCheck("Doc fetch", "info", f"enabled={settings.doc_fetch_enabled}; allow_non_official={settings.doc_fetch_allow_non_official}"))
     flags = integration_flags()
     checks.append(ReleaseCheck("Integration flags", "info", ", ".join(f"{key}={value}" for key, value in flags.items())))
-    checks.append(_executable_check("nmap", "Optional nmap binary for richer scanning."))
+    checks.append(_nmap_check())
     for module in ("scapy", "fastapi", "uvicorn", "pytest"):
         checks.append(_module_check(module))
 
@@ -260,6 +261,19 @@ def _path_check(name: str, path: Path, should_exist: bool, recommendation: str |
 def _executable_check(name: str, description: str) -> ReleaseCheck:
     path = shutil.which(name)
     return ReleaseCheck(name, "pass" if path else "warning", path or f"Not found. {description}")
+
+
+def _nmap_check() -> ReleaseCheck:
+    path = shutil.which("nmap")
+    if not path:
+        return ReleaseCheck(
+            "nmap",
+            "warning",
+            "Optional nmap binary not found.",
+            "sudo apt install nmap",
+        )
+    version = get_nmap_version() or "version unavailable"
+    return ReleaseCheck("nmap", "pass", f"{path}; {version}")
 
 
 def _module_check(module: str) -> ReleaseCheck:

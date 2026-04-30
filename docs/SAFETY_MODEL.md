@@ -6,6 +6,9 @@ Network Assistant is local-first and intentionally conservative.
 
 - Scanning is limited to local/private networks.
 - Public IP scanning is blocked by safety policy.
+- Built-in and Nmap CIDR scans are limited to `/24` or smaller.
+- Nmap is optional and controlled: only `ping`, `common-ports`, and `service-light` profiles are allowed.
+- Raw Nmap flags, hostnames, public targets, vulnerability scripts, aggressive scans, UDP scans, and all-port scans are blocked.
 - Documentation fetching is explicit and disabled by default.
 
 ## Command Allowlists
@@ -59,6 +62,7 @@ Preflight verifies stored or refreshed read-only evidence before execution.
 - Low-risk actions can run in agent mode.
 - Medium-risk actions require confirmation in agent mode.
 - High-risk actions such as execute/save/rollback are blocked from chat/agent and require direct CLI confirmation.
+- Controlled Nmap scans are medium-risk and require confirmation in agent mode. `nmap check` is low-risk.
 
 ## Integration Test Gates
 

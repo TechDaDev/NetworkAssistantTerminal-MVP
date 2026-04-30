@@ -1,6 +1,6 @@
-# v1.0.0-rc1 Release Notes
+# v1.0.0-rc2 Release Notes
 
-Network Assistant v1.0.0-rc1 is a local-first terminal network assistant for lab and controlled local network operations.
+Network Assistant v1.0.0-rc2 is a local-first terminal network assistant for lab and controlled local network operations.
 
 ## Included
 
@@ -21,6 +21,7 @@ Network Assistant v1.0.0-rc1 is a local-first terminal network assistant for lab
 - Agent mode with audit logging, risk policy, and guided workflows
 - Lab integration harness skipped by default
 - Release commands: `init`, `doctor`, `config`, `release readiness`
+- Added controlled optional Nmap integration with safe profiles, private-network enforcement, XML parsing, inventory saving, agent/chat/server routes, and doctor detection.
 
 ## Not Included
 

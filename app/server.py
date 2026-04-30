@@ -49,6 +49,13 @@ from app.services.manual_topology import (
 )
 from app.services.llm_planner import LLMPlanner, LLMPlannerError
 from app.services.network_detection import NetworkDetectionError
+from app.services.nmap_tool import (
+    get_nmap_version,
+    is_nmap_available,
+    run_nmap_scan,
+    save_nmap_results,
+)
+from app.safety import UnsafeNetworkError
 from app.services.serializers import device_to_dict, diagnostic_to_dict, scan_run_to_dict
 from app.services.serializers import (
     change_plan_to_dict,
@@ -85,6 +92,15 @@ from app.services.topology_awareness import analyze_plan_topology_risk
 api = FastAPI(title="Network Assistant Local API", version="0.14.0")
 
 
+def _nmap_result_to_dict(result) -> dict:
+    return {
+        "target": result.target,
+        "profile": result.profile,
+        "live_hosts_count": result.live_hosts_count,
+        "devices": [device.model_dump(mode="json") for device in result.devices],
+    }
+
+
 class CommandRequest(BaseModel):
     text: str
 
@@ -99,6 +115,15 @@ class DeviceRequest(BaseModel):
 
 class ConnectivityRequest(BaseModel):
     target_ip: str
+
+
+class NmapScanLocalRequest(BaseModel):
+    profile: str = "common-ports"
+
+
+class NmapScanTargetRequest(BaseModel):
+    target: str
+    profile: str = "common-ports"
 
 
 class VlanPlanRequest(BaseModel):
@@ -527,6 +552,47 @@ def diagnose_connectivity_endpoint(request: ConnectivityRequest) -> dict:
         return {"ok": True, "diagnostic": diagnostic_to_dict(diagnose_connectivity(request.target_ip))}
     except (DiagnosticError, NetworkDetectionError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@api.get("/nmap/check")
+def nmap_check_endpoint() -> dict:
+    return {"ok": True, "available": is_nmap_available(), "version": get_nmap_version()}
+
+
+@api.post("/nmap/scan-local")
+def nmap_scan_local_endpoint(request: NmapScanLocalRequest) -> dict:
+    try:
+        from app.services.network_detection import detect_local_network
+
+        result = run_nmap_scan(detect_local_network().cidr, request.profile)
+        save_nmap_results(result)
+    except (UnsafeNetworkError, NetworkDetectionError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "scan": _nmap_result_to_dict(result)}
+
+
+@api.post("/nmap/scan-host")
+def nmap_scan_host_endpoint(request: NmapScanTargetRequest) -> dict:
+    try:
+        result = run_nmap_scan(request.target, request.profile)
+        save_nmap_results(result)
+    except (UnsafeNetworkError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "scan": _nmap_result_to_dict(result)}
+
+
+@api.post("/nmap/scan-device")
+def nmap_scan_device_endpoint(request: NmapScanTargetRequest) -> dict:
+    try:
+        if not any(device.ip_address == request.target for device in list_devices()):
+            raise HTTPException(status_code=404, detail=f"Device {request.target} not found in inventory.")
+        result = run_nmap_scan(request.target, request.profile)
+        save_nmap_results(result)
+    except HTTPException:
+        raise
+    except (UnsafeNetworkError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "scan": _nmap_result_to_dict(result)}
 
 
 @api.post("/plan/vlan")

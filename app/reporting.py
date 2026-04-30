@@ -35,6 +35,7 @@ from app.services.config_snapshot import SnapshotExportResult, SnapshotRestoreGu
 from app.services.doc_fetcher import SavedFetchedDocument
 from app.services.knowledge import KnowledgeSearchResult, search_knowledge
 from app.services.lab_integration import IntegrationHarnessResult
+from app.services.nmap_tool import NmapScanResult, get_nmap_version, is_nmap_available
 from app.release import ReleaseCommandResult
 from app.schemas import DiagnosticResult, NetworkInfo, ScanResult
 
@@ -95,6 +96,58 @@ def print_scan_summary(scan_result: ScanResult) -> None:
             device.fingerprint.type_guess,
         )
     console.print(table)
+
+
+def print_nmap_check() -> None:
+    import shutil
+
+    available = is_nmap_available()
+    path = shutil.which("nmap")
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style="bold")
+    table.add_column()
+    table.add_row("Available:", "Yes" if available else "No")
+    table.add_row("Path:", path or "--")
+    table.add_row("Version:", get_nmap_version() or "--")
+    if not available:
+        table.add_row("Install:", "sudo apt install nmap")
+    console.print(Panel(table, title="Nmap Availability", expand=False))
+
+
+def print_nmap_scan_result(result: NmapScanResult, saved: bool = True) -> None:
+    elapsed = (result.finished_at - result.started_at).total_seconds()
+    console.print(Panel.fit(
+        f"Target: {result.target}\n"
+        f"Profile: {result.profile}\n"
+        f"Live Hosts: {result.live_hosts_count}\n"
+        f"Scan Time: {elapsed:.1f} seconds\n"
+        f"Saved Inventory: {'Yes' if saved else 'No'}",
+        title="Nmap Scan Summary",
+    ))
+
+    hosts = Table(title="Nmap Hosts")
+    hosts.add_column("IP")
+    hosts.add_column("Hostname")
+    hosts.add_column("MAC")
+    hosts.add_column("Open Ports")
+    for device in result.devices:
+        hosts.add_row(
+            device.host.ip_address,
+            device.host.hostname or "--",
+            device.host.mac_address or "--",
+            ",".join(str(port.port) for port in device.ports) or "--",
+        )
+    console.print(hosts)
+
+    ports = Table(title="Nmap Open Ports And Services")
+    ports.add_column("IP")
+    ports.add_column("Port")
+    ports.add_column("Protocol")
+    ports.add_column("Service")
+    for device in result.devices:
+        for port in sorted(device.ports, key=lambda item: item.port):
+            ports.add_row(device.host.ip_address, str(port.port), port.protocol, port.service_guess)
+    console.print(ports)
 
 
 def print_devices_table(devices: list[Device]) -> None:

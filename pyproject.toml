@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "network-assistant"
-version = "1.0.0rc1"
+version = "1.0.0rc2"
 description = "Local-first network assistant CLI with safe diagnostics, planning, snapshots, and controlled execution."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -40,4 +40,4 @@ py-modules = ["main"]
 packages = ["app", "app.agent", "app.services"]
 
 [tool.network-assistant]
-display-version = "1.0.0-rc1"
+display-version = "1.0.0-rc2"

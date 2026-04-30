@@ -40,6 +40,29 @@ def parse_intent(text: str, memory: SessionMemory | None = None) -> ParsedIntent
     if lowered in {"summarize latest scan", "summarize latest report"}:
         return ParsedIntent("ask", {"question": normalized}, raw)
 
+    if lowered == "nmap check":
+        return ParsedIntent("nmap_check", raw_text=raw)
+    if lowered in {"nmap scan local", "nmap scan local common ports"}:
+        return ParsedIntent("nmap_scan_local", {"profile": "common-ports"}, raw)
+    if lowered == "nmap scan local ping":
+        return ParsedIntent("nmap_scan_local", {"profile": "ping"}, raw)
+    if lowered == "nmap scan local service light":
+        return ParsedIntent("nmap_scan_local", {"profile": "service-light"}, raw)
+    nmap_device_match = re.fullmatch(r"nmap scan device ([0-9.]+)(?: (ping|common ports|service light))?", lowered)
+    if nmap_device_match:
+        return ParsedIntent(
+            "nmap_scan_device",
+            {"target": nmap_device_match.group(1), "profile": _nmap_profile(nmap_device_match.group(2))},
+            raw,
+        )
+    nmap_host_match = re.fullmatch(r"nmap scan ([0-9.]+)(?: (ping|common ports|service light))?", lowered)
+    if nmap_host_match:
+        return ParsedIntent(
+            "nmap_scan_host",
+            {"target": nmap_host_match.group(1), "profile": _nmap_profile(nmap_host_match.group(2))},
+            raw,
+        )
+
     public_scan = re.fullmatch(r"(?:scan|nmap|scan public ip|run nmap against)\s+([0-9.]+)", lowered)
     if public_scan:
         target = public_scan.group(1)
@@ -324,6 +347,12 @@ def parse_intent(text: str, memory: SessionMemory | None = None) -> ParsedIntent
 
 def _unsafe_request_reason(lowered: str) -> str | None:
     reasons: list[str] = []
+    if lowered.startswith("nmap ") and not lowered.startswith("nmap check") and not lowered.startswith("nmap scan "):
+        reasons.append("Raw nmap command execution is not allowed. Use controlled nmap scan routes.")
+    if "public ip" in lowered and "nmap" in lowered:
+        reasons.append("Public IP scanning with nmap is blocked.")
+    if "nmap " in lowered and any(flag in lowered for flag in (" -a", "--script", " -o", " -su", " -ss", " -p-", " --top-ports", " --min-rate", " -t4", " -t5", " -d")):
+        reasons.append("Arbitrary nmap flags, scripts, aggressive scans, and UDP/all-port scans are blocked.")
     if any(pattern in lowered for pattern in ("ssh into", "run ssh", "ssh ", "raw ssh", "execute raw command")):
         reasons.append("Raw SSH command execution is not allowed in agent mode.")
     if any(pattern in lowered for pattern in ("run shell", "bash", "terminal command", "sudo ")):
@@ -384,3 +413,11 @@ def _looks_like_ip(value: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _nmap_profile(value: str | None) -> str:
+    if value == "ping":
+        return "ping"
+    if value == "service light":
+        return "service-light"
+    return "common-ports"

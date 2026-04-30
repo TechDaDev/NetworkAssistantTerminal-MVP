@@ -20,6 +20,14 @@ from app.services.knowledge import get_knowledge, list_knowledge, search_knowled
 from app.services.llm_planner import LLMPlanner
 from app.services.manual_topology import list_manual_edges, list_manual_nodes, list_manual_notes
 from app.services.network_detection import detect_local_network
+from app.services.nmap_tool import (
+    get_nmap_version,
+    is_nmap_available,
+    run_nmap_scan,
+    save_nmap_results,
+    validate_nmap_profile,
+    validate_nmap_target,
+)
 from app.services.scanner import scan_network
 from app.services.topology import build_topology_snapshot, explain_topology, export_topology_mermaid, get_latest_topology, rebuild_topology_with_manual
 from app.services.topology_awareness import analyze_plan_topology_risk
@@ -180,6 +188,10 @@ def route_local_command(text: str) -> RoutedCommandResult:
         )
     if lowered in {"scan network", "scan"}:
         return _scan_network()
+    if lowered == "nmap check":
+        return _nmap_check()
+    if lowered.startswith("nmap scan "):
+        return _route_nmap_scan(command)
     if lowered in {"enrich devices", "enrich"}:
         devices = [device_to_dict(device) for device in enrich_stored_devices()]
         return RoutedCommandResult(True, "enrich", f"Enriched {len(devices)} device(s).", devices)
@@ -366,6 +378,10 @@ def _help() -> RoutedCommandResult:
         "show devices",
         "show device <ip>",
         "scan network",
+        "nmap check",
+        "nmap scan local",
+        "nmap scan host <ip>",
+        "nmap scan device <ip>",
         "enrich devices",
         "diagnose network",
         "diagnose management-ports",
@@ -420,6 +436,72 @@ def _looks_like_ip(value: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _nmap_check() -> RoutedCommandResult:
+    available = is_nmap_available()
+    return RoutedCommandResult(
+        True,
+        "nmap",
+        "nmap is available." if available else "nmap is optional and not installed. Install with: sudo apt install nmap",
+        {"available": available, "version": get_nmap_version()},
+    )
+
+
+def _route_nmap_scan(command: str) -> RoutedCommandResult:
+    parts = command.split()
+    if len(parts) < 3:
+        return RoutedCommandResult(False, "nmap", "Use: nmap scan local, nmap scan host <ip>, or nmap scan device <ip>.")
+    mode = parts[2].lower()
+    if mode == "local":
+        target = detect_local_network().cidr
+        profile = _profile_from_words(parts[3:])
+    elif mode == "host" and len(parts) >= 4:
+        target = parts[3]
+        profile = _profile_from_words(parts[4:])
+    elif mode == "device" and len(parts) >= 4:
+        target = parts[3]
+        profile = _profile_from_words(parts[4:])
+        if get_device_profile(target) is None:
+            return RoutedCommandResult(False, "nmap", f"Device {target} is not in inventory.")
+    elif _looks_like_ip(mode):
+        target = mode
+        profile = _profile_from_words(parts[3:])
+    else:
+        return RoutedCommandResult(False, "nmap", "Use controlled nmap routes only. Raw nmap arguments are not accepted.")
+
+    target = validate_nmap_target(target)
+    profile = validate_nmap_profile(profile)
+    result = run_nmap_scan(target, profile)
+    save_nmap_results(result)
+    return RoutedCommandResult(
+        True,
+        "nmap",
+        f"Nmap {profile} scan saved {result.live_hosts_count} host(s).",
+        _nmap_result_to_dict(result),
+    )
+
+
+def _profile_from_words(words: list[str]) -> str:
+    text = " ".join(words).lower()
+    if not text:
+        return "common-ports"
+    if "service" in text and "light" in text:
+        return "service-light"
+    if "ping" in text:
+        return "ping"
+    if "common" in text:
+        return "common-ports"
+    return text
+
+
+def _nmap_result_to_dict(result) -> dict:
+    return {
+        "target": result.target,
+        "profile": result.profile,
+        "live_hosts_count": result.live_hosts_count,
+        "devices": [device.model_dump(mode="json") for device in result.devices],
+    }
 
 
 def _route_plan_vlan(command: str) -> RoutedCommandResult:

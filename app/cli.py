@@ -38,6 +38,8 @@ from app.reporting import (
     print_diagnostic_result,
     print_preflight_result,
     print_network_info,
+    print_nmap_check,
+    print_nmap_scan_result,
     print_scan_summary,
     print_release_result,
     print_safe_config,
@@ -164,6 +166,7 @@ from app.services.topology_awareness import analyze_plan_topology_risk
 from app.services.context_builder import build_local_network_context
 from app.services.llm_planner import LLMPlanner, LLMPlannerError
 from app.services.network_detection import NetworkDetectionError, detect_local_network
+from app.services.nmap_tool import run_nmap_scan, save_nmap_results, validate_nmap_profile, validate_nmap_target
 from app.services.scanner import scan_network
 from app.services.security import CredentialSecurityError, generate_credential_key
 from app.release import config_paths, doctor as release_doctor, init_project, safe_config, v1_readiness, version_text
@@ -184,6 +187,7 @@ topology_app = typer.Typer(help="Read-only evidence-based topology mapping.")
 snapshot_app = typer.Typer(help="Read-only device config snapshots.")
 config_app = typer.Typer(help="Show safe local configuration.")
 release_app = typer.Typer(help="Release readiness checks.")
+nmap_app = typer.Typer(help="Controlled optional nmap scanner.")
 manual_node_app = typer.Typer(help="Manual local topology node corrections.")
 manual_edge_app = typer.Typer(help="Manual local topology edge corrections.")
 manual_note_app = typer.Typer(help="Manual local topology notes.")
@@ -201,6 +205,7 @@ app.add_typer(topology_app, name="topology")
 app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(config_app, name="config")
 app.add_typer(release_app, name="release")
+app.add_typer(nmap_app, name="nmap")
 topology_app.add_typer(manual_node_app, name="manual-node")
 topology_app.add_typer(manual_edge_app, name="manual-edge")
 topology_app.add_typer(manual_note_app, name="manual-note")
@@ -303,6 +308,79 @@ def scan() -> None:
     except (NetworkDetectionError, UnsafeNetworkError) as exc:
         print_error(str(exc))
         raise typer.Exit(code=1) from exc
+
+
+@nmap_app.command("check")
+def nmap_check() -> None:
+    """Check whether the optional nmap system binary is available."""
+    print_nmap_check()
+
+
+@nmap_app.command("scan-local")
+def nmap_scan_local(
+    profile: str = typer.Option("common-ports", "--profile", help="Allowed: ping, common-ports, service-light."),
+    yes: bool = typer.Option(False, "--yes", help="Skip interactive confirmation."),
+) -> None:
+    """Run a controlled nmap scan against the detected private local CIDR."""
+    try:
+        network_info = detect_local_network()
+        target = validate_nmap_target(network_info.cidr)
+        profile = validate_nmap_profile(profile)
+        _confirm_nmap_scan(target, profile, yes)
+        result = run_nmap_scan(target, profile)
+        save_nmap_results(result)
+        print_nmap_scan_result(result)
+    except (NetworkDetectionError, UnsafeNetworkError, RuntimeError) as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+
+@nmap_app.command("scan-host")
+def nmap_scan_host(
+    ip: str,
+    profile: str = typer.Option("common-ports", "--profile", help="Allowed: ping, common-ports, service-light."),
+    yes: bool = typer.Option(False, "--yes", help="Skip interactive confirmation."),
+) -> None:
+    """Run a controlled nmap scan against one private IP."""
+    try:
+        target = validate_nmap_target(ip)
+        profile = validate_nmap_profile(profile)
+        _confirm_nmap_scan(target, profile, yes)
+        result = run_nmap_scan(target, profile)
+        save_nmap_results(result)
+        print_nmap_scan_result(result)
+    except (UnsafeNetworkError, RuntimeError) as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+
+@nmap_app.command("scan-device")
+def nmap_scan_device(
+    ip: str,
+    profile: str = typer.Option("service-light", "--profile", help="Allowed: ping, common-ports, service-light."),
+    yes: bool = typer.Option(False, "--yes", help="Skip interactive confirmation."),
+) -> None:
+    """Run a controlled nmap scan against a private IP already in inventory."""
+    try:
+        if get_device_profile(ip) is None:
+            print_error("Device not found in local inventory.")
+            raise typer.Exit(code=1)
+        target = validate_nmap_target(ip)
+        profile = validate_nmap_profile(profile)
+        _confirm_nmap_scan(target, profile, yes)
+        result = run_nmap_scan(target, profile)
+        save_nmap_results(result)
+        print_nmap_scan_result(result)
+    except (UnsafeNetworkError, RuntimeError) as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+
+
+def _confirm_nmap_scan(target: str, profile: str, yes: bool) -> None:
+    if yes:
+        return
+    if not typer.confirm(f"Run controlled nmap profile `{profile}` against {target}?", default=False):
+        raise typer.Exit(code=1)
 
 
 @app.command()

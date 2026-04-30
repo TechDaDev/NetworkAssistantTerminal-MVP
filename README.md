@@ -12,6 +12,7 @@ network-assistant init
 network-assistant doctor
 nat agent
 nat scan
+nat nmap check
 nat topology build
 ```
 
@@ -41,6 +42,7 @@ This version can:
 - Refuse public networks and networks larger than `/24`.
 - Discover live hosts on the detected local private subnet.
 - Scan only common management/service ports on discovered live hosts.
+- Optionally run controlled Nmap profiles against private/local targets when the system `nmap` binary is installed.
 - Generate honest device/vendor/type guesses from simple rules.
 - Enrich stored devices with passive facts such as MAC vendor hints, HTTP titles, SSH banners, gateway status, and SNMP port notes.
 - Store scan-derived observations in `DeviceObservation`.
@@ -85,6 +87,7 @@ This version does not:
 - Save configuration automatically after execution.
 - Treat lab validation commands as permission to execute anything.
 - Let agent mode run arbitrary shell, SSH, RouterOS, Cisco config, or LLM-generated commands.
+- Run raw Nmap commands, arbitrary Nmap flags, vulnerability scripts, aggressive scans, UDP scans, all-port scans, public-IP scans, or hostname scans.
 - Execute, save, rollback, delete credentials, or delete knowledge from agent mode.
 - Treat ARP or same-subnet adjacency as proof of physical cabling.
 
@@ -132,6 +135,25 @@ sudo python main.py scan
 ```
 
 The app still tries fallback discovery without sudo.
+
+Nmap is optional and is detected as a system binary:
+
+```bash
+sudo apt install nmap
+python main.py nmap check
+```
+
+The Nmap integration is controlled, not a terminal wrapper. Supported commands are:
+
+```bash
+python main.py nmap check
+python main.py nmap scan-local --profile ping
+python main.py nmap scan-local --profile common-ports
+python main.py nmap scan-host 192.168.88.1 --profile common-ports
+python main.py nmap scan-device 192.168.88.1 --profile service-light
+```
+
+Allowed profiles are `ping`, `common-ports`, and `service-light`. Targets must be private IPs or private CIDRs of `/24` or smaller. Results are saved to the existing inventory and port tables.
 
 ## Usage
 

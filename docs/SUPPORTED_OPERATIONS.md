@@ -3,6 +3,7 @@
 ## Supported Read-Only Operations
 
 - Local/private network detection and safe scan
+- Optional controlled Nmap scans with safe profiles only: `ping`, `common-ports`, and `service-light`
 - Passive enrichment
 - Read-only SSH collection through command allowlists
 - Device diagnostics
@@ -40,3 +41,4 @@ Execution is available only through approved plans, passed preflight, exact conf
 - MikroTik `/import` restore automation
 - Chat/agent execution for high-risk actions
 - Internet search from normal `ask`
+- Raw Nmap execution, arbitrary Nmap flags, vulnerability scripts, aggressive scans, UDP scans, all-port scans, public targets, and hostname targets
