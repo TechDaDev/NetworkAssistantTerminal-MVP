@@ -2,6 +2,8 @@
 
 Plugin tools are pure local Python helpers generated for tasks that do not fit the built-in tool registry. They extend planning, parsing, validation, reporting, and diagnostics without giving generated code direct device or shell access.
 
+The agent checks the tool capability index and skill registry before offering plugin generation. Normal operational tasks such as scanning, router/gateway connection, diagnostics, topology, backups, and supported configuration planning must use existing tools or custom ChangePlans first.
+
 ## Allowed Categories
 
 - `planner`: produces plan material such as proposed commands, rollback commands, verification commands, risk summary, and policy summary.

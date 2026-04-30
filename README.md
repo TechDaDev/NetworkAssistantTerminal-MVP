@@ -58,6 +58,7 @@ This version can:
 - Create local configuration change plans with proposed and rollback commands.
 - Create DeepSeek-generated custom Cisco IOS and MikroTik RouterOS command plans that are saved, validated, approved, backed up, executed, verified, and rolled back through the existing lifecycle.
 - Generate pure local plugin tools for planner, parser, validator, reporter, and diagnostic tasks, then validate and approve them before use.
+- Use a structured tool capability index and operational skill registry so the agent can choose existing network tools, chain follow-up actions, and avoid plugin generation for normal router/scanning workflows.
 - Review, approve, reject, archive, and preflight-check change plans before execution eligibility.
 - Execute only approved, preflight-passed Cisco IOS VLAN plans and MikroTik address plans through an exact confirmation gate.
 - Verify executed plans, explicitly save Cisco IOS config with `write memory`, and manually rollback supported plans with confirmation.
@@ -92,6 +93,7 @@ This version does not:
 - Run raw Nmap commands, arbitrary Nmap flags, vulnerability scripts, aggressive scans, UDP scans, all-port scans, public-IP scans, or hostname scans.
 - Let DeepSeek directly open SSH or execute commands. Generated custom commands must be saved as a `ChangePlan` and pass classification, approval, preflight, backup, confirmation, verification, and logging.
 - Let generated plugin tools open SSH, call subprocess, access sockets, read credentials, install packages, call external APIs, write arbitrary files, or modify devices directly.
+- Answer clearly unrelated non-network requests such as poems, recipes, images, biology summaries, or general chatbot tasks.
 - Execute, save, rollback, delete credentials, or delete knowledge from agent mode.
 - Treat ARP or same-subnet adjacency as proof of physical cabling.
 
@@ -246,6 +248,12 @@ python main.py plugin validate safe_reporter
 python main.py plugin approve safe_reporter
 python main.py plugin run safe_reporter --input-json '{}'
 python main.py plugin disable safe_reporter
+python main.py tools list
+python main.py tools search router
+python main.py tools show router_connect_workflow
+python main.py skills list
+python main.py skills search router
+python main.py skills show router_connection
 pytest
 pytest -m integration
 ```
@@ -498,6 +506,8 @@ Release documentation:
 - `docs/RELEASE_CHECKLIST.md`
 
 Phase 34 adds the LLM plugin tool factory. Unsupported agent tasks can be turned into pending pure-Python local plugins after user confirmation. Generated plugins are limited to planner, parser, validator, reporter, and diagnostic categories. They are saved under `plugins/pending`, statically validated, and require explicit approval before moving to `plugins/approved`. Approved plugins may run through `nat plugin run`; pending plugins never run. Planner plugins can output proposed commands, rollback commands, and verification commands, but any device execution must still become a governed `ChangePlan`.
+
+Phase 35 adds a tool capability index, operational skill registry, network-only domain guard, deterministic tool/skill retrieval, task chaining, router connection workflow, and cache-friendly planner prompt construction. `scan my network` now scans and returns discovered devices in the agent response. `connect to my router` uses the built-in gateway/read-only SSH workflow instead of plugin generation. Plugin generation is reserved for reusable network planner/parser/validator/reporter/diagnostic tools.
 
 ## Future Phases
 

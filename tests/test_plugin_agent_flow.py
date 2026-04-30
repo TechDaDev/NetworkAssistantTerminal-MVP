@@ -9,13 +9,14 @@ class Draft:
     tool_name = "safe_reporter"
 
 
-def test_agent_offers_plugin_generation_for_unsupported_task(monkeypatch):
+def test_agent_offers_plugin_generation_for_network_reusable_tool(monkeypatch):
     monkeypatch.setattr(agent_loop, "log_agent_action", lambda **_kwargs: None)
     monkeypatch.setattr(agent_loop.Confirm, "ask", lambda *args, **kwargs: False)
+    monkeypatch.setattr(agent_loop, "_execute_plugin_generation_flow", lambda goal, risk: SimpleNamespace(action="generate_plugin_tool", risk_level=risk, ok=False, message="declined", next_command=None, data=None, policy_decision=""))
 
-    result = process_agent_input("summon unsupported local formatter", SessionMemory(), session_id="agent-test")
+    result = process_agent_input("create a reusable tool for parsing router interface notes", SessionMemory(), session_id="agent-test", confirm_fn=lambda *_args: True)
 
-    assert result.action == "unknown"
+    assert result.action == "generate_plugin_tool"
     assert result.ok is False
 
 

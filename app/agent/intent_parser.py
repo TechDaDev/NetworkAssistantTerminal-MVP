@@ -12,12 +12,17 @@ def parse_intent(text: str, memory: SessionMemory | None = None) -> ParsedIntent
     raw = text.strip()
     normalized = " ".join(raw.split())
     lowered = normalized.lower()
+    phrase = lowered.rstrip("?.!")
     memory = memory or SessionMemory()
 
     if not normalized:
         return ParsedIntent("unknown", raw_text=raw)
     if lowered in {"help", "?"}:
         return ParsedIntent("help", raw_text=raw)
+    if phrase in {"what tools do you have", "tools", "list tools", "show tools"}:
+        return ParsedIntent("list_tools", raw_text=raw)
+    if phrase in {"what skills do you have", "skills", "list skills", "show skills"}:
+        return ParsedIntent("list_skills", raw_text=raw)
     if lowered in {"exit", "quit", "q"}:
         return ParsedIntent("exit", raw_text=raw)
     if lowered == "clear":
@@ -83,7 +88,9 @@ def parse_intent(text: str, memory: SessionMemory | None = None) -> ParsedIntent
         except ValueError:
             pass
 
-    if lowered in {"scan network", "scan my network", "scan"}:
+    if lowered in {"scan network", "scan my network", "scan", "find devices", "discover devices", "what is connected to my network", "show open ports", "check services"}:
+        return ParsedIntent("scan_network", raw_text=raw)
+    if any(phrase in lowered for phrase in ("scan my network", "find devices", "discover devices", "what is connected to my network")):
         return ParsedIntent("scan_network", raw_text=raw)
     if lowered in {"enrich devices", "enrich"}:
         return ParsedIntent("enrich_devices", raw_text=raw)
@@ -139,9 +146,26 @@ def parse_intent(text: str, memory: SessionMemory | None = None) -> ParsedIntent
         refresh = any(part.lower() in {"refresh", "refresh=true", "--refresh"} for part in parts[3:])
         return ParsedIntent("preflight_plan_refresh" if refresh else "preflight_plan", {"plan_id": plan_id}, raw)
 
-    if lowered.startswith("connect collect ") or lowered.startswith("collect "):
+    if (lowered.startswith("connect collect ") or lowered.startswith("collect ")) and not any(term in lowered for term in ("router info", "gateway info")):
         target = normalized.rsplit(" ", 1)[-1]
         return ParsedIntent("connect_collect", {"ip": _resolve_device_ref(target, memory)}, raw)
+
+    if lowered in {
+        "connect to my router",
+        "connect to router",
+        "connect to gateway",
+        "login to router",
+        "inspect my router",
+        "inspect router",
+        "inspect gateway",
+        "check my router",
+        "check router",
+        "collect router info",
+        "collect gateway info",
+        "read router configuration",
+        "show router information",
+    }:
+        return ParsedIntent("router_connect_workflow", raw_text=raw)
 
     if lowered in {"lab checklist", "show lab checklist"}:
         return ParsedIntent("lab_checklist", raw_text=raw)
@@ -342,7 +366,7 @@ def parse_intent(text: str, memory: SessionMemory | None = None) -> ParsedIntent
                 raw,
             )
 
-    if lowered.startswith(("configure ", "add nat ", "create firewall ", "configure cisco ", "configure mikrotik ", "add firewall ", "create cisco ", "create mikrotik ")):
+    if lowered.startswith(("configure ", "add nat ", "create firewall ", "configure cisco ", "configure mikrotik ", "add firewall ", "create cisco ", "create mikrotik ", "setup failover", "add static route", "add route", "add nat rule")):
         values = _key_values(normalized)
         platform = values.get("platform")
         if platform is None:
@@ -356,7 +380,7 @@ def parse_intent(text: str, memory: SessionMemory | None = None) -> ParsedIntent
             raw,
         )
 
-    if lowered.startswith(("generate plugin ", "create plugin ", "make plugin ")):
+    if lowered.startswith(("generate plugin ", "create plugin ", "make plugin ", "create a reusable tool ", "make a parser ", "create a parser ", "build a planner plugin ", "add a new tool ")):
         return ParsedIntent("generate_plugin_tool", {"goal": normalized}, raw)
 
     return ParsedIntent("unknown", {"text": normalized}, raw)

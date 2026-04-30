@@ -24,6 +24,7 @@ Network Assistant v1.0.0-rc4 is a local-first terminal network assistant for lab
 - Added controlled optional Nmap integration with safe profiles, private-network enforcement, XML parsing, inventory saving, agent/chat/server routes, and doctor detection.
 - Added DeepSeek-generated custom Cisco IOS and MikroTik RouterOS command plans with command classification, mandatory backup snapshots, governed approval/preflight/execution, verification, rollback, CLI/server/agent support, and offline tests.
 - Added LLM-generated plugin tools with validation, approval, safe registry loading, plugin CLI/server/agent support, and planner plugin handoff into governed ChangePlans.
+- Added skill-based Tool Capability Index with operational skill files, deterministic tool/skill retrieval, network-only domain guard, router connection workflow, scan/topology task chaining, cache-friendly planner prompt construction, and tools/skills CLI/server routes.
 
 ## Not Included
 

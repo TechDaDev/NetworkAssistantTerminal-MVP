@@ -6,6 +6,7 @@
 - Optional controlled Nmap scans with safe profiles only: `ping`, `common-ports`, and `service-light`
 - DeepSeek-generated custom Cisco IOS and MikroTik RouterOS command plans saved as governed `ChangePlan` records
 - Pure local generated plugin tools for planner, parser, validator, reporter, and diagnostic tasks after validation and approval
+- Tool capability index and operational skill registry for deterministic tool selection, network-only routing, and safe task chaining
 - Passive enrichment
 - Read-only SSH collection through command allowlists
 - Device diagnostics
@@ -50,3 +51,5 @@ Approved planner plugins may generate plan material, but they do not execute com
 - Credential theft, password bypass, exploit tooling, hidden downloads/imports, reset/reboot, or secret/user-management commands in generated custom plans
 - Generated plugins that import forbidden modules, call `open`, `eval`, `exec`, `subprocess`, sockets, HTTP clients, SSH libraries, package installers, credential readers, or arbitrary file writers
 - Running pending, rejected, disabled, or validation-failed plugins
+- Plugin generation as a fallback for ordinary scan, router connection, diagnostics, topology, backup, or configuration tasks that existing tools or custom ChangePlans can handle
+- Clearly unrelated non-network requests in agent mode

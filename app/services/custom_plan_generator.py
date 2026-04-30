@@ -10,6 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.agent.custom_plan_prompt import CUSTOM_PLAN_SYSTEM_PROMPT, build_custom_plan_prompt
+from app.agent.skill_retriever import retrieve_relevant_skills
+from app.agent.tool_retriever import retrieve_relevant_tools
 from app.config import settings
 from app.database import get_session, init_db
 from app.models import ChangePlan, Device
@@ -171,6 +173,21 @@ def _call_deepseek_for_plan(user_goal: str, target_device_ip: str | None, platfo
 
 def _build_generation_context(user_goal: str, target_device_ip: str | None, platform: str | None, additional_context: dict | None) -> str:
     pieces = [build_local_network_context(user_goal)]
+    tools = retrieve_relevant_tools(user_goal, limit=8)
+    skills = retrieve_relevant_skills(user_goal, limit=4)
+    if tools:
+        pieces.append(
+            "Relevant existing tools:\n"
+            + "\n".join(
+                f"- {tool.tool_name}: {tool.description} risk={tool.risk_level} forbidden={'; '.join(tool.forbidden_uses) or '--'}"
+                for tool in tools
+            )
+        )
+    if skills:
+        pieces.append(
+            "Relevant operational skills:\n"
+            + "\n".join(f"- {skill.metadata.skill_name}: {skill.metadata.display_name}" for skill in skills)
+        )
     if target_device_ip or platform:
         pieces.append(f"Requested target_device_ip={target_device_ip or 'unknown'} platform={platform or 'unknown'}")
     if additional_context:

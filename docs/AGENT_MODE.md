@@ -20,6 +20,8 @@ Inventory:
 show devices
 show device 192.168.88.1
 latest report
+what tools do you have?
+what skills do you have?
 ```
 
 Diagnostics:
@@ -28,6 +30,9 @@ Diagnostics:
 diagnose network
 inspect 192.168.88.1
 show risky management ports
+scan my network
+what is connected to my network
+connect to my router
 ```
 
 Topology:
@@ -71,6 +76,21 @@ Plugin tools are limited to planner, parser, validator, reporter, and diagnostic
 
 If an approved planner plugin produces network commands, the agent must offer to save them as a normal `ChangePlan`. Device execution still goes through approval, preflight, snapshot, exact confirmation, verification, rollback, and logging.
 
+Plugin generation is not used for normal operational tasks. Router/gateway connection requests use the built-in `router_connect_workflow`; scan requests use `scan_network` and automatically show discovered devices. Advanced Cisco/MikroTik configuration requests use fixed planning tools or custom ChangePlan generation before plugins.
+
+## Tools and Skills
+
+```bash
+nat tools list
+nat tools search "router"
+nat tools show router_connect_workflow
+nat skills list
+nat skills search "router"
+nat skills show router_connection
+```
+
+The tool capability index describes available tools, inputs, risk, forbidden uses, and follow-up tools. Skill files are operational playbooks that guide tool selection and workflow chaining.
+
 ## Risk Levels
 
 - Low-risk actions run directly.
@@ -82,4 +102,4 @@ Execution/save/rollback require direct CLI exact confirmation.
 
 ## Blocked Actions
 
-Agent mode does not run arbitrary SSH, shell commands, raw plugin code, unapproved plugins, plan execution, config save, or rollback.
+Agent mode does not run arbitrary SSH, shell commands, raw plugin code, unapproved plugins, plan execution, config save, or rollback. Clearly non-network requests are refused before LLM planning.

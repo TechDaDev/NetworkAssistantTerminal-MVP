@@ -44,6 +44,14 @@ Plugins are saved to `plugins/pending` first. Pending plugins never run. Static 
 
 Generated plugins may not open SSH, use sockets, call subprocess, install packages, read credentials, read `.env`, write arbitrary files, call external APIs, call the LLM, or modify devices directly. Planner plugins may produce proposed commands, rollback commands, and verification commands, but execution must go through the existing `ChangePlan` lifecycle.
 
+## Tool and Skill Selection
+
+The agent uses a structured Tool Capability Index and operational skill files before any LLM/plugin fallback. Router connection, scanning, diagnostics, topology, snapshots, knowledge, and governed planning requests must use existing tools when available.
+
+Clearly non-network requests are refused before LLM planning. Plugin generation is only offered for network-related reusable planner/parser/validator/reporter/diagnostic tools when existing tools, approved plugins, and custom ChangePlan generation are not enough.
+
+Task chaining is allowed for safe follow-up display and summary steps, such as `scan_network -> show_devices` or `build_topology -> show_topology`. Execution, save, and rollback are never auto-run as follow-up tools.
+
 ## Approval and Confirmation
 
 - Plans require human review and approval before execution.

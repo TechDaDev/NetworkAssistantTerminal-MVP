@@ -5,6 +5,8 @@ from app.agent.agent_models import ToolSpec
 
 TOOL_REGISTRY: dict[str, ToolSpec] = {
     "help": ToolSpec("help", "Show agent help.", "low"),
+    "list_tools": ToolSpec("list_tools", "Show available agent tools.", "low"),
+    "list_skills": ToolSpec("list_skills", "Show available agent skills.", "low"),
     "unknown": ToolSpec("unknown", "Show safe fallback examples for unknown input.", "low"),
     "blocked_request": ToolSpec("blocked_request", "Blocked unsafe user request.", "high", allowed_in_agent=False),
     "status": ToolSpec("status", "Show session status.", "low"),
@@ -49,6 +51,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
     "scan_network": ToolSpec("scan_network", "Scan detected local private network.", "medium", True, reason="It will scan your local private network."),
     "enrich_devices": ToolSpec("enrich_devices", "Run passive enrichment on stored devices.", "medium", True, reason="It may connect to discovered service ports for banners/titles."),
     "connect_collect": ToolSpec("connect_collect", "Run allowlisted read-only collection.", "medium", True, reason="It opens SSH with stored credentials and runs read-only allowlisted commands."),
+    "router_connect_workflow": ToolSpec("router_connect_workflow", "Detect gateway and guide read-only router connection.", "medium", True, reason="It may scan/enrich or open read-only SSH collection after confirmation."),
     "preflight_plan_refresh": ToolSpec("preflight_plan_refresh", "Run preflight with read-only refresh.", "medium", True, reason="It may connect read-only using stored credentials."),
     "preflight_plan": ToolSpec("preflight_plan", "Run stored-data preflight.", "low"),
     "review_plan": ToolSpec("review_plan", "Mark a plan reviewed.", "medium", True, reason="It changes local plan lifecycle state."),

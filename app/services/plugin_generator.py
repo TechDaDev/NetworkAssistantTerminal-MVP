@@ -6,6 +6,8 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
+from app.agent.skill_retriever import retrieve_relevant_skills
+from app.agent.tool_retriever import retrieve_relevant_tools
 from app.config import settings
 from app.services.context_builder import redact_sensitive_text
 from app.services.plugin_registry import save_pending_plugin
@@ -13,6 +15,17 @@ from app.services.plugin_registry import save_pending_plugin
 
 class PluginGenerationError(ValueError):
     """Raised when plugin generation fails safely."""
+
+
+PLUGIN_SCHEMA_ERROR_MESSAGE = (
+    "Plugin generation failed because the LLM did not return the required plugin schema.\n\n"
+    "Expected fields:\n"
+    "- tool_name\n"
+    "- description\n"
+    "- category\n"
+    "- code\n\n"
+    "No plugin was saved, approved, or executed."
+)
 
 
 class PluginDraft(BaseModel):
@@ -75,11 +88,11 @@ def parse_plugin_json(content: str | dict) -> PluginDraft:
     try:
         data = json.loads(content) if isinstance(content, str) else dict(content)
     except (TypeError, json.JSONDecodeError) as exc:
-        raise PluginGenerationError("LLM returned invalid plugin JSON.") from exc
+        raise PluginGenerationError(PLUGIN_SCHEMA_ERROR_MESSAGE) from exc
     try:
         return PluginDraft(**data, raw_json=data)
     except ValidationError as exc:
-        raise PluginGenerationError(f"Plugin JSON failed schema validation: {exc}") from exc
+        raise PluginGenerationError(PLUGIN_SCHEMA_ERROR_MESSAGE) from exc
 
 
 def save_generated_plugin(draft: PluginDraft):
@@ -95,8 +108,11 @@ def save_generated_plugin(draft: PluginDraft):
 
 
 def _build_prompt(user_goal: str, missing_tool_reason: str, category_hint: str | None, context: dict | None) -> str:
+    tools = retrieve_relevant_tools(user_goal, limit=8)
+    skills = retrieve_relevant_skills(user_goal, limit=4)
     return (
         "Create a local pure-Python plugin for Network Assistant.\n"
+        "Prefer existing registered tools. Generate a plugin only for reusable planner/parser/validator/reporter/diagnostic capability gaps.\n"
         "Allowed categories: planner, parser, validator, reporter, diagnostic.\n"
         "Required interface constants: TOOL_NAME, TOOL_VERSION, TOOL_DESCRIPTION, TOOL_CATEGORY, TOOL_RISK_LEVEL, INPUT_SCHEMA, OUTPUT_SCHEMA.\n"
         "Required function: run(inputs: dict) -> dict with success, summary, data, warnings.\n"
@@ -105,5 +121,10 @@ def _build_prompt(user_goal: str, missing_tool_reason: str, category_hint: str |
         f"User goal: {redact_sensitive_text(user_goal)}\n"
         f"Missing tool reason: {redact_sensitive_text(missing_tool_reason)}\n"
         f"Category hint: {category_hint or 'choose safest'}\n"
+        "Relevant existing tools:\n"
+        + "\n".join(f"- {tool.tool_name}: {tool.description}" for tool in tools)
+        + "\nRelevant skills:\n"
+        + "\n".join(f"- {skill.metadata.skill_name}: {skill.metadata.display_name}" for skill in skills)
+        + "\n"
         f"Context JSON: {json.dumps(context or {}, default=str)}\n"
     )

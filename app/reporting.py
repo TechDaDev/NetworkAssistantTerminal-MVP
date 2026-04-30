@@ -189,6 +189,68 @@ def print_plugin_run_result(result: PluginRunResult) -> None:
         console.print(Panel(str(result.data), title="Data", border_style="green", expand=False))
 
 
+def print_tool_capabilities(tools) -> None:
+    table = Table(title="Tool Capability Index")
+    for column in ("Tool", "Category", "Risk", "Description"):
+        table.add_column(column)
+    for tool in tools:
+        table.add_row(tool.tool_name, tool.category, tool.risk_level, tool.description)
+    console.print(table)
+
+
+def print_tool_capability(tool) -> None:
+    if tool is None:
+        print_error("Tool not found.")
+        return
+    body = (
+        f"Name: {tool.tool_name}\n"
+        f"Display: {tool.display_name}\n"
+        f"Category: {tool.category}\n"
+        f"Risk: {tool.risk_level}\n"
+        f"Description: {tool.description}\n"
+        f"User phrases: {', '.join(tool.user_phrases) or '--'}\n"
+        f"Required inputs: {', '.join(tool.required_inputs) or '--'}\n"
+        f"Optional inputs: {', '.join(tool.optional_inputs) or '--'}\n"
+        f"Preconditions: {', '.join(tool.preconditions) or '--'}\n"
+        f"Outputs: {', '.join(tool.outputs) or '--'}\n"
+        f"Forbidden uses: {', '.join(tool.forbidden_uses) or '--'}\n"
+        f"Examples: {', '.join(tool.examples) or '--'}\n"
+        f"Follow-up tools: {', '.join(tool.followup_tools) or '--'}\n"
+        f"Related skills: {', '.join(tool.related_skills) or '--'}"
+    )
+    console.print(Panel(body, title="Tool Capability", border_style="cyan", expand=False))
+
+
+def print_skill_list(skills) -> None:
+    table = Table(title="Agent Skills")
+    for column in ("Skill", "Category", "Risk", "Tools"):
+        table.add_column(column)
+    for skill in skills:
+        metadata = skill.metadata
+        table.add_row(metadata.skill_name, metadata.category, metadata.risk_level, ", ".join(metadata.tools[:5]))
+    console.print(table)
+
+
+def print_skill_document(skill) -> None:
+    if skill is None:
+        print_error("Skill not found.")
+        return
+    metadata = skill.metadata
+    body = (
+        f"Name: {metadata.skill_name}\n"
+        f"Display: {metadata.display_name}\n"
+        f"Category: {metadata.category}\n"
+        f"Risk: {metadata.risk_level}\n"
+        f"Tools: {', '.join(metadata.tools) or '--'}\n"
+        f"Triggers: {', '.join(metadata.triggers) or '--'}\n"
+        f"Requires confirmation: {', '.join(metadata.requires_confirmation) or '--'}\n"
+        f"Forbidden: {', '.join(metadata.forbidden) or '--'}\n"
+        f"Path: {skill.path}"
+    )
+    console.print(Panel(body, title="Skill Metadata", border_style="cyan", expand=False))
+    console.print(Panel(skill.body, title=metadata.display_name, border_style="green"))
+
+
 def print_devices_table(devices: list[Device]) -> None:
     table = Table(title="Stored Devices")
     table.add_column("IP")

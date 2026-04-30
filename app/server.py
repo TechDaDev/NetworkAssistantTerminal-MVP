@@ -4,6 +4,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from app.llm_policy import LLMSafetyError
+from app.agent.skill_registry import get_skill, load_skill_documents, search_skills
+from app.agent.tool_capability_index import get_tool_capability, list_tool_capabilities
+from app.agent.tool_retriever import retrieve_relevant_tools
 from app.services.command_router import route_local_command
 from app.services.config_planner import ConfigPlanError, create_cisco_access_port_plan, create_cisco_description_plan, create_mikrotik_address_plan, create_mikrotik_dhcp_plan, create_vlan_plan, get_change_plan, list_change_plans
 from app.services.config_planner import approve_change_plan, archive_change_plan, reject_change_plan, review_change_plan
@@ -258,6 +261,51 @@ class PluginRunRequest(BaseModel):
 @api.get("/health")
 def health() -> dict:
     return {"ok": True, "service": "network-assistant", "bind": "127.0.0.1"}
+
+
+def _skill_to_dict(skill) -> dict:
+    return {
+        "metadata": skill.metadata.model_dump(mode="json"),
+        "body": skill.body,
+        "path": skill.path,
+    }
+
+
+@api.get("/tools")
+def tools_endpoint() -> dict:
+    return {"ok": True, "tools": [tool.model_dump(mode="json") for tool in list_tool_capabilities()]}
+
+
+@api.get("/tools/search")
+def tools_search_endpoint(q: str) -> dict:
+    return {"ok": True, "tools": [tool.model_dump(mode="json") for tool in retrieve_relevant_tools(q, limit=12)]}
+
+
+@api.get("/tools/{tool_name}")
+def tool_show_endpoint(tool_name: str) -> dict:
+    tool = get_tool_capability(tool_name)
+    if tool is None:
+        raise HTTPException(status_code=404, detail=f"Tool {tool_name} not found.")
+    return {"ok": True, "tool": tool.model_dump(mode="json")}
+
+
+@api.get("/skills")
+def skills_endpoint() -> dict:
+    return {"ok": True, "skills": [_skill_to_dict(skill) for skill in load_skill_documents()]}
+
+
+@api.get("/skills/search")
+def skills_search_endpoint(q: str) -> dict:
+    return {"ok": True, "skills": [_skill_to_dict(skill) for skill in search_skills(q, limit=12)]}
+
+
+@api.get("/skills/{skill_name}")
+def skill_show_endpoint(skill_name: str) -> dict:
+    try:
+        skill = get_skill(skill_name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True, "skill": _skill_to_dict(skill)}
 
 
 @api.get("/plugins")

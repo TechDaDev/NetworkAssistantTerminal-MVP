@@ -43,6 +43,8 @@ from app.reporting import (
     print_plugin_detail,
     print_plugin_list,
     print_plugin_run_result,
+    print_skill_document,
+    print_skill_list,
     print_scan_summary,
     print_release_result,
     print_safe_config,
@@ -56,7 +58,12 @@ from app.reporting import (
     print_topology_export,
     print_topology_risk_findings,
     print_topology_snapshot,
+    print_tool_capabilities,
+    print_tool_capability,
 )
+from app.agent.skill_registry import get_skill, load_skill_documents, search_skills
+from app.agent.tool_capability_index import get_tool_capability, list_tool_capabilities
+from app.agent.tool_retriever import retrieve_relevant_tools
 from app.llm_policy import LLMSafetyError
 from app.llm_policy import validate_llm_question
 from app.safety import UnsafeNetworkError, validate_scan_target
@@ -201,6 +208,8 @@ config_app = typer.Typer(help="Show safe local configuration.")
 release_app = typer.Typer(help="Release readiness checks.")
 nmap_app = typer.Typer(help="Controlled optional nmap scanner.")
 plugin_app = typer.Typer(help="Pure local generated plugin tools.")
+tools_app = typer.Typer(help="Agent tool capability index.")
+skills_app = typer.Typer(help="Agent operational skill playbooks.")
 manual_node_app = typer.Typer(help="Manual local topology node corrections.")
 manual_edge_app = typer.Typer(help="Manual local topology edge corrections.")
 manual_note_app = typer.Typer(help="Manual local topology notes.")
@@ -220,6 +229,8 @@ app.add_typer(config_app, name="config")
 app.add_typer(release_app, name="release")
 app.add_typer(nmap_app, name="nmap")
 app.add_typer(plugin_app, name="plugin")
+app.add_typer(tools_app, name="tools")
+app.add_typer(skills_app, name="skills")
 topology_app.add_typer(manual_node_app, name="manual-node")
 topology_app.add_typer(manual_edge_app, name="manual-edge")
 topology_app.add_typer(manual_note_app, name="manual-note")
@@ -471,6 +482,47 @@ def plugin_run(tool_name: str, input_json: str = typer.Option("{}", "--input-jso
         print_error(str(exc))
         raise typer.Exit(code=1) from exc
     print_plugin_run_result(result)
+
+
+@tools_app.command("list")
+def tools_list() -> None:
+    """List the structured agent tool capability index."""
+    print_tool_capabilities(list_tool_capabilities())
+
+
+@tools_app.command("search")
+def tools_search(query: str) -> None:
+    """Search the agent tool capability index."""
+    print_tool_capabilities(retrieve_relevant_tools(query, limit=12))
+
+
+@tools_app.command("show")
+def tools_show(tool_name: str) -> None:
+    """Show one tool capability entry."""
+    print_tool_capability(get_tool_capability(tool_name))
+
+
+@skills_app.command("list")
+def skills_list() -> None:
+    """List operational agent skill playbooks."""
+    print_skill_list(load_skill_documents())
+
+
+@skills_app.command("search")
+def skills_search(query: str) -> None:
+    """Search operational agent skill playbooks."""
+    print_skill_list(search_skills(query, limit=12))
+
+
+@skills_app.command("show")
+def skills_show(skill_name: str) -> None:
+    """Show one operational skill playbook."""
+    try:
+        skill = get_skill(skill_name)
+    except KeyError as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+    print_skill_document(skill)
 
 
 @app.command()

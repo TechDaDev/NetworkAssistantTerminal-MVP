@@ -12,14 +12,21 @@ from rich.table import Table
 
 from app.agent.action_log import log_agent_action, new_agent_session_id
 from app.agent.agent_models import AgentResult, AgentToolResult, ParsedIntent, PolicyDecision
+from app.agent.domain_guard import NETWORK_ONLY_MESSAGE, decide_network_domain, is_plugin_worthy_request
 from app.agent.intent_parser import parse_intent
 from app.agent.policy import evaluate_agent_action
 from app.agent.session_memory import SessionMemory
+from app.agent.skill_registry import load_skill_documents
+from app.agent.skill_retriever import retrieve_relevant_skills
+from app.agent.task_chainer import build_task_chain
+from app.agent.tool_capability_index import list_tool_capabilities
+from app.agent.tool_retriever import retrieve_relevant_tools
 from app.services.config_planner import approve_change_plan, create_cisco_access_port_plan, create_cisco_description_plan, create_mikrotik_address_plan, create_mikrotik_dhcp_plan, create_vlan_plan, get_change_plan, list_change_plans, review_change_plan, run_preflight
 from app.services.config_executor import execute_change_plan
 from app.services.custom_plan_executor import DOUBLE_CONFIRMATION_PHRASE, custom_plan_requires_double_confirmation
 from app.services.custom_plan_generator import generate_custom_plan_from_goal, metadata_for_plan, save_custom_plan
 from app.services.config_snapshot import capture_manual_snapshot, generate_restore_guidance, list_snapshots, show_snapshot, write_snapshot_export_file
+from app.services.credentials import get_credential_for_ip
 from app.services.device_connection import run_readonly_profile_collection
 from app.services.diagnostics import diagnose_connectivity, diagnose_device, diagnose_management_ports, diagnose_network
 from app.services.doc_fetcher import save_fetched_document_as_knowledge
@@ -70,6 +77,9 @@ def process_agent_input(
     confirm_fn=None,
 ) -> AgentResult:
     intent = parse_intent(text, memory)
+    domain = decide_network_domain(text)
+    if intent.tool_name in {"unknown", "ask", "generate_plugin_tool", "custom_plan_goal"} and not domain.is_network_related:
+        intent = ParsedIntent("blocked_request", {"reason": NETWORK_ONLY_MESSAGE, "text": text}, text)
     decision = evaluate_agent_action(intent.tool_name, intent.args)
     confirmation_result = "not_required"
     executed = False
@@ -138,6 +148,14 @@ def _execute_allowed_intent(intent: ParsedIntent, memory: SessionMemory, risk: s
     args = intent.args
     if name == "help":
         return AgentResult(name, risk, True, "Supported agent actions are listed below.", data={"commands": _help_commands()})
+    if name == "list_tools":
+        tools = list_tool_capabilities()
+        data = [{"tool": tool.tool_name, "category": tool.category, "risk": tool.risk_level, "description": tool.description} for tool in tools]
+        return AgentResult(name, risk, True, f"{len(tools)} registered tool capability entry(s). Use `nat tools search \"router\"` for details.", "nat tools list", data)
+    if name == "list_skills":
+        skills = load_skill_documents()
+        data = [{"skill": skill.metadata.skill_name, "category": skill.metadata.category, "risk": skill.metadata.risk_level, "tools": skill.metadata.tools} for skill in skills]
+        return AgentResult(name, risk, True, f"{len(skills)} operational skill playbook(s). Skills guide tool selection and safe workflows.", "nat skills list", data)
     if name == "unknown":
         text = args.get("text") or intent.raw_text or ""
         return _offer_plugin_generation(str(text), risk)
@@ -187,7 +205,19 @@ def _execute_allowed_intent(intent: ParsedIntent, memory: SessionMemory, risk: s
         network = detect_local_network()
         scan = scan_network(network.cidr)
         save_scan_result(scan)
-        return AgentResult(name, risk, True, f"Scanned {network.cidr}; found {scan.live_hosts_count} live host(s).", "python main.py devices")
+        devices = list_devices()
+        data = {
+            "network": network.cidr,
+            "live_hosts": scan.live_hosts_count,
+            "devices": [{"ip": device.ip_address, "vendor": device.vendor_guess, "type": device.device_type_guess, "ports": [port.port for port in device.ports]} for device in devices],
+            "task_chain": build_task_chain(intent.raw_text or "scan my network", "scan_network"),
+        }
+        message = f"Scanned {network.cidr}; found {scan.live_hosts_count} live host(s). Inventory now has {len(devices)} device(s)."
+        if "diagnose_network" in data["task_chain"]:
+            diagnostic = diagnose_network()
+            data["diagnostic_summary"] = diagnostic.summary
+            message += f" {diagnostic.summary}"
+        return AgentResult(name, risk, True, message, None, data)
     if name == "enrich_devices":
         devices = enrich_stored_devices()
         return AgentResult(name, risk, True, f"Enriched {len(devices)} stored device(s).", "python main.py devices")
@@ -295,6 +325,8 @@ def _execute_allowed_intent(intent: ParsedIntent, memory: SessionMemory, risk: s
         ip = _require_arg(args, "ip")
         result = run_readonly_profile_collection(ip)
         return AgentResult(name, risk, True, f"Read-only collection completed: {result.success_count} succeeded, {result.failure_count} failed.", f"python main.py command history {ip}")
+    if name == "router_connect_workflow":
+        return _execute_router_connect_workflow(intent.raw_text or "connect to my router", risk)
     if name == "fetch_docs_url":
         result = save_fetched_document_as_knowledge(
             url=_require_arg(args, "url"),
@@ -398,7 +430,8 @@ def _execute_allowed_intent(intent: ParsedIntent, memory: SessionMemory, risk: s
         )
     if name == "build_topology":
         result = build_topology_snapshot()
-        return AgentResult(name, risk, True, f"Built topology snapshot #{result.snapshot.id}.", "python main.py topology show")
+        data = {"snapshot_id": result.snapshot.id, "nodes": len(result.nodes), "edges": len(result.edges), "task_chain": build_task_chain(intent.raw_text or "build topology", "build_topology")}
+        return AgentResult(name, risk, True, f"Built topology snapshot #{result.snapshot.id}: {len(result.nodes)} node(s), {len(result.edges)} edge(s).", "python main.py topology show", data)
     if name == "show_topology":
         result = get_latest_topology()
         if result is None:
@@ -745,7 +778,93 @@ def _execute_custom_plan_flow(args: dict, risk: str) -> AgentResult:
     )
 
 
+def _execute_router_connect_workflow(user_request: str, risk: str) -> AgentResult:
+    network = detect_local_network()
+    gateway = network.gateway_ip
+    if not gateway:
+        return AgentResult("router_connect_workflow", risk, False, "No default gateway was detected.", "nat detect")
+
+    device = get_device_profile(gateway)
+    scanned = False
+    enriched = False
+    if device is None:
+        try:
+            run_scan = Confirm.ask(f"Gateway {gateway} is not in inventory. Run safe scan/enrich first?", default=False)
+        except (EOFError, OSError):
+            run_scan = False
+        if run_scan:
+            scan = scan_network(network.cidr)
+            save_scan_result(scan)
+            scanned = True
+            enrich_stored_devices()
+            enriched = True
+            device = get_device_profile(gateway)
+    if device is None:
+        return AgentResult(
+            "router_connect_workflow",
+            risk,
+            False,
+            f"Detected gateway {gateway}, but it is not in inventory.",
+            "nat scan",
+            {"gateway_ip": gateway, "scanned": scanned, "enriched": enriched, "plugin_generation": "not_used"},
+        )
+
+    credential = get_credential_for_ip(gateway)
+    data = {
+        "gateway_ip": gateway,
+        "device": {"ip": device.ip_address, "vendor": device.vendor_guess, "type": device.device_type_guess},
+        "credential_present": credential is not None,
+        "scanned": scanned,
+        "enriched": enriched,
+        "plugin_generation": "not_used",
+    }
+    if credential is None:
+        return AgentResult(
+            "router_connect_workflow",
+            risk,
+            True,
+            f"Gateway {gateway} is in inventory as {device.vendor_guess}/{device.device_type_guess}. Credentials are required for read-only SSH collection.",
+            f"nat credentials add {gateway}",
+            data,
+        )
+
+    try:
+        collect = Confirm.ask(f"Run read-only SSH collection for gateway {gateway}?", default=False)
+    except (EOFError, OSError):
+        collect = False
+    if not collect:
+        return AgentResult(
+            "router_connect_workflow",
+            risk,
+            True,
+            f"Gateway {gateway} is in inventory and has saved credentials. Read-only collection was not started.",
+            f"nat connect collect {gateway}",
+            data,
+        )
+    result = run_readonly_profile_collection(gateway)
+    data["collection"] = {"success_count": result.success_count, "failure_count": result.failure_count}
+    return AgentResult(
+        "router_connect_workflow",
+        risk,
+        True,
+        f"Read-only router collection completed for {gateway}: {result.success_count} succeeded, {result.failure_count} failed.",
+        f"nat command history {gateway}",
+        data,
+    )
+
+
 def _offer_plugin_generation(text: str, risk: str) -> AgentResult:
+    domain = decide_network_domain(text)
+    tools = retrieve_relevant_tools(text, limit=5)
+    skills = retrieve_relevant_skills(text, limit=3)
+    if not domain.is_network_related:
+        return AgentResult("unknown", risk, False, NETWORK_ONLY_MESSAGE)
+    if not is_plugin_worthy_request(text):
+        data = {
+            "relevant_tools": [tool.tool_name for tool in tools],
+            "relevant_skills": [skill.metadata.skill_name for skill in skills],
+        }
+        return AgentResult("unknown", risk, False, _unknown_help(text), data=data)
     message = (
         f"I do not have a registered tool for this task: {text or '--'}\n"
         "I can ask the LLM to generate a local plugin tool.\n"
