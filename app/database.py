@@ -40,6 +40,7 @@ def _run_lightweight_migrations() -> None:
         "manual_topology_nodes",
         "manual_topology_edges",
         "manual_topology_notes",
+        "plugin_tools",
     ):
         if table_name not in table_names:
             Base.metadata.tables[table_name].create(bind=engine, checkfirst=True)

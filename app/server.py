@@ -27,6 +27,10 @@ from app.services.diagnostics import (
 )
 from app.services.doc_fetcher import DocFetchError, save_fetched_document_as_knowledge, search_official_docs
 from app.services.custom_plan_generator import CustomPlanError, generate_custom_plan_from_goal, save_custom_plan
+from app.services.plugin_generator import PluginGenerationError, generate_plugin_from_goal, save_generated_plugin
+from app.services.plugin_registry import approve_plugin, disable_plugin, get_plugin, list_plugins, reject_plugin, validate_plugin
+from app.services.plugin_reporting import plugin_run_to_dict, plugin_to_dict
+from app.services.plugin_runner import run_plugin
 from app.services.inventory import get_latest_scan_report, list_devices
 from app.services.knowledge import (
     KnowledgeError,
@@ -240,9 +244,78 @@ class ManualTopologyNoteRequest(BaseModel):
     note: str
 
 
+class PluginGenerateRequest(BaseModel):
+    goal: str
+    missing_tool_reason: str = "No existing registered tool can satisfy this request."
+    category: str | None = None
+    context: dict | None = None
+
+
+class PluginRunRequest(BaseModel):
+    inputs: dict = {}
+
+
 @api.get("/health")
 def health() -> dict:
     return {"ok": True, "service": "network-assistant", "bind": "127.0.0.1"}
+
+
+@api.get("/plugins")
+def plugins_endpoint(status: str | None = None) -> dict:
+    return {"ok": True, "plugins": [plugin_to_dict(plugin) for plugin in list_plugins(status=status)]}
+
+
+@api.get("/plugins/{tool_name}")
+def plugin_show_endpoint(tool_name: str) -> dict:
+    plugin = get_plugin(tool_name)
+    if plugin is None:
+        raise HTTPException(status_code=404, detail=f"Plugin {tool_name} not found.")
+    return {"ok": True, "plugin": plugin_to_dict(plugin)}
+
+
+@api.post("/plugins/generate")
+def plugin_generate_endpoint(request: PluginGenerateRequest) -> dict:
+    try:
+        draft = generate_plugin_from_goal(request.goal, request.missing_tool_reason, category_hint=request.category, context=request.context)
+        plugin = save_generated_plugin(draft)
+    except PluginGenerationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "plugin": plugin_to_dict(plugin), "warning": "Generated plugin is pending and not executable until approved."}
+
+
+@api.post("/plugins/{tool_name}/validate")
+def plugin_validate_endpoint(tool_name: str) -> dict:
+    try:
+        return {"ok": True, "plugin": plugin_to_dict(validate_plugin(tool_name))}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@api.post("/plugins/{tool_name}/approve")
+def plugin_approve_endpoint(tool_name: str) -> dict:
+    try:
+        return {"ok": True, "plugin": plugin_to_dict(approve_plugin(tool_name))}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@api.post("/plugins/{tool_name}/reject")
+def plugin_reject_endpoint(tool_name: str) -> dict:
+    return {"ok": True, "plugin": plugin_to_dict(reject_plugin(tool_name))}
+
+
+@api.post("/plugins/{tool_name}/disable")
+def plugin_disable_endpoint(tool_name: str) -> dict:
+    return {"ok": True, "plugin": plugin_to_dict(disable_plugin(tool_name))}
+
+
+@api.post("/plugins/{tool_name}/run")
+def plugin_run_endpoint(tool_name: str, request: PluginRunRequest) -> dict:
+    try:
+        result = run_plugin(tool_name, request.inputs)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "result": plugin_run_to_dict(result)}
 
 
 @api.get("/devices")

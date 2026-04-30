@@ -57,6 +57,7 @@ This version can:
 - Start a localhost-only API server and use a Matrix-style terminal chat client.
 - Create local configuration change plans with proposed and rollback commands.
 - Create DeepSeek-generated custom Cisco IOS and MikroTik RouterOS command plans that are saved, validated, approved, backed up, executed, verified, and rolled back through the existing lifecycle.
+- Generate pure local plugin tools for planner, parser, validator, reporter, and diagnostic tasks, then validate and approve them before use.
 - Review, approve, reject, archive, and preflight-check change plans before execution eligibility.
 - Execute only approved, preflight-passed Cisco IOS VLAN plans and MikroTik address plans through an exact confirmation gate.
 - Verify executed plans, explicitly save Cisco IOS config with `write memory`, and manually rollback supported plans with confirmation.
@@ -90,6 +91,7 @@ This version does not:
 - Let agent mode run arbitrary shell, SSH, RouterOS, Cisco config, or LLM-generated commands.
 - Run raw Nmap commands, arbitrary Nmap flags, vulnerability scripts, aggressive scans, UDP scans, all-port scans, public-IP scans, or hostname scans.
 - Let DeepSeek directly open SSH or execute commands. Generated custom commands must be saved as a `ChangePlan` and pass classification, approval, preflight, backup, confirmation, verification, and logging.
+- Let generated plugin tools open SSH, call subprocess, access sockets, read credentials, install packages, call external APIs, write arbitrary files, or modify devices directly.
 - Execute, save, rollback, delete credentials, or delete knowledge from agent mode.
 - Treat ARP or same-subnet adjacency as proof of physical cabling.
 
@@ -237,6 +239,13 @@ python main.py topology manual-node list
 python main.py topology manual-edge list
 python main.py topology manual-note list
 python main.py topology rebuild-with-manual
+python main.py plugin generate --goal "create a local report from device facts" --category reporter
+python main.py plugin list
+python main.py plugin show safe_reporter
+python main.py plugin validate safe_reporter
+python main.py plugin approve safe_reporter
+python main.py plugin run safe_reporter --input-json '{}'
+python main.py plugin disable safe_reporter
 pytest
 pytest -m integration
 ```
@@ -487,6 +496,8 @@ Release documentation:
 - `docs/SUPPORTED_OPERATIONS.md`
 - `docs/SAFETY_MODEL.md`
 - `docs/RELEASE_CHECKLIST.md`
+
+Phase 34 adds the LLM plugin tool factory. Unsupported agent tasks can be turned into pending pure-Python local plugins after user confirmation. Generated plugins are limited to planner, parser, validator, reporter, and diagnostic categories. They are saved under `plugins/pending`, statically validated, and require explicit approval before moving to `plugins/approved`. Approved plugins may run through `nat plugin run`; pending plugins never run. Planner plugins can output proposed commands, rollback commands, and verification commands, but any device execution must still become a governed `ChangePlan`.
 
 ## Future Phases
 

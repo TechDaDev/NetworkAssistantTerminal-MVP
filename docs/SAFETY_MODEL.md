@@ -30,6 +30,20 @@ The lifecycle exists to prevent accidental device changes.
 
 DeepSeek-generated custom Cisco IOS and MikroTik RouterOS plans use the same lifecycle. DeepSeek may draft precheck, proposed, rollback, and verification commands, but Python remains the safety controller and executor. Generated commands are classified before approval/preflight/execution. Security-abuse commands are blocked, and disruptive routing/firewall/NAT/DHCP/management commands require double confirmation.
 
+## Plugin Tool Factory
+
+Generated plugin tools are pure local helpers, not execution adapters. They are limited to these categories:
+
+- planner
+- parser
+- validator
+- reporter
+- diagnostic
+
+Plugins are saved to `plugins/pending` first. Pending plugins never run. Static validation checks syntax, required metadata, safe tool names, category/risk values, forbidden imports, forbidden calls, top-level side effects, and code size. Approval is required before a plugin moves to `plugins/approved` and becomes runnable.
+
+Generated plugins may not open SSH, use sockets, call subprocess, install packages, read credentials, read `.env`, write arbitrary files, call external APIs, call the LLM, or modify devices directly. Planner plugins may produce proposed commands, rollback commands, and verification commands, but execution must go through the existing `ChangePlan` lifecycle.
+
 ## Approval and Confirmation
 
 - Plans require human review and approval before execution.
@@ -66,6 +80,7 @@ Preflight verifies stored or refreshed read-only evidence before execution.
 - High-risk actions such as execute/save/rollback are blocked from chat/agent and require direct CLI confirmation.
 - Controlled Nmap scans are medium-risk and require confirmation in agent mode. `nmap check` is low-risk.
 - Custom generated plans are high-risk. Agent mode must show the plan, ask approval, run preflight, capture a backup snapshot, require exact execution confirmation, verify, and roll back on failed verification.
+- Plugin generation is medium-risk and requires confirmation. Plugin approval is separate from generation, and approved plugins still cannot bypass plan execution gates.
 
 ## Integration Test Gates
 

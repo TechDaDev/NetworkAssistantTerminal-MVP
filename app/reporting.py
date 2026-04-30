@@ -37,6 +37,7 @@ from app.services.knowledge import KnowledgeSearchResult, search_knowledge
 from app.services.lab_integration import IntegrationHarnessResult
 from app.services.nmap_tool import NmapScanResult, get_nmap_version, is_nmap_available
 from app.services.custom_plan_generator import metadata_for_plan
+from app.services.plugin_runner import PluginRunResult
 from app.release import ReleaseCommandResult
 from app.schemas import DiagnosticResult, NetworkInfo, ScanResult
 
@@ -149,6 +150,43 @@ def print_nmap_scan_result(result: NmapScanResult, saved: bool = True) -> None:
         for port in sorted(device.ports, key=lambda item: item.port):
             ports.add_row(device.host.ip_address, str(port.port), port.protocol, port.service_guess)
     console.print(ports)
+
+
+def print_plugin_list(plugins) -> None:
+    table = Table(title="Plugin Tools")
+    for column in ("Name", "Category", "Risk", "Status", "Validation", "Description"):
+        table.add_column(column)
+    for plugin in plugins:
+        table.add_row(plugin.tool_name, plugin.category, plugin.risk_level, plugin.status, plugin.validation_status, plugin.description)
+    console.print(table)
+
+
+def print_plugin_detail(plugin) -> None:
+    if plugin is None:
+        print_error("Plugin not found.")
+        return
+    body = (
+        f"Name: {plugin.tool_name}\n"
+        f"Version: {plugin.version}\n"
+        f"Description: {plugin.description}\n"
+        f"Category: {plugin.category}\n"
+        f"Risk: {plugin.risk_level}\n"
+        f"Status: {plugin.status}\n"
+        f"Validation: {plugin.validation_status}\n"
+        f"Path: {plugin.file_path}\n"
+        f"Source: {plugin.source}"
+    )
+    console.print(Panel(body, title="Plugin Tool", border_style="green", expand=False))
+    console.print(Panel(plugin.validation_report or "--", title="Validation Report", border_style="yellow", expand=False))
+
+
+def print_plugin_run_result(result: PluginRunResult) -> None:
+    body = f"Tool: {result.tool_name}\nSuccess: {'Yes' if result.success else 'No'}\nSummary: {result.summary}"
+    console.print(Panel(body, title="Plugin Run Result", border_style="green" if result.success else "yellow", expand=False))
+    if result.warnings:
+        console.print(Panel("\n".join(result.warnings), title="Warnings", border_style="yellow", expand=False))
+    if result.data:
+        console.print(Panel(str(result.data), title="Data", border_style="green", expand=False))
 
 
 def print_devices_table(devices: list[Device]) -> None:

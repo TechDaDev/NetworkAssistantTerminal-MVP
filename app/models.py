@@ -353,3 +353,24 @@ class ManualTopologyNote(Base):
     note: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class PluginTool(Base):
+    __tablename__ = "plugin_tools"
+    __table_args__ = (UniqueConstraint("tool_name", name="uq_plugin_tool_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tool_name: Mapped[str] = mapped_column(String(64), index=True)
+    version: Mapped[str] = mapped_column(String(50), default="0.1.0")
+    description: Mapped[str] = mapped_column(Text, default="")
+    category: Mapped[str] = mapped_column(String(30), index=True)
+    risk_level: Mapped[str] = mapped_column(String(30), default="medium")
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    file_path: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(50), default="llm_generated")
+    validation_status: Mapped[str] = mapped_column(String(30), default="not_run")
+    validation_report: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

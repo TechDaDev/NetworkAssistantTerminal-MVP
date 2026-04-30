@@ -46,6 +46,11 @@ app/services/llm_planner.py
 app/services/manual_topology.py
 app/services/network_detection.py
 app/services/nmap_tool.py
+app/services/plugin_generator.py
+app/services/plugin_registry.py
+app/services/plugin_reporting.py
+app/services/plugin_runner.py
+app/services/plugin_validator.py
 app/services/scanner.py
 app/services/security.py
 app/services/serializers.py
@@ -106,6 +111,12 @@ tests/test_nmap_routes.py
 tests/test_nmap_safety.py
 tests/test_nmap_tool.py
 tests/test_packaging_cli.py
+tests/test_plugin_agent_flow.py
+tests/test_plugin_generation.py
+tests/test_plugin_registry.py
+tests/test_plugin_routes.py
+tests/test_plugin_runner.py
+tests/test_plugin_validation.py
 tests/test_release_docs.py
 tests/test_release_readiness.py
 tests/test_safety.py

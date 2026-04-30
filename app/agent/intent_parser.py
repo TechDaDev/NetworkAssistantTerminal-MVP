@@ -356,6 +356,9 @@ def parse_intent(text: str, memory: SessionMemory | None = None) -> ParsedIntent
             raw,
         )
 
+    if lowered.startswith(("generate plugin ", "create plugin ", "make plugin ")):
+        return ParsedIntent("generate_plugin_tool", {"goal": normalized}, raw)
+
     return ParsedIntent("unknown", {"text": normalized}, raw)
 
 

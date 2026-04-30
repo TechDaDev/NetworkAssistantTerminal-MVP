@@ -40,6 +40,9 @@ from app.reporting import (
     print_network_info,
     print_nmap_check,
     print_nmap_scan_result,
+    print_plugin_detail,
+    print_plugin_list,
+    print_plugin_run_result,
     print_scan_summary,
     print_release_result,
     print_safe_config,
@@ -173,6 +176,9 @@ from app.services.context_builder import build_local_network_context
 from app.services.llm_planner import LLMPlanner, LLMPlannerError
 from app.services.network_detection import NetworkDetectionError, detect_local_network
 from app.services.nmap_tool import run_nmap_scan, save_nmap_results, validate_nmap_profile, validate_nmap_target
+from app.services.plugin_generator import PluginGenerationError, generate_plugin_from_goal, save_generated_plugin
+from app.services.plugin_registry import approve_plugin, disable_plugin, get_plugin, list_plugins, reject_plugin, validate_plugin
+from app.services.plugin_runner import run_plugin
 from app.services.scanner import scan_network
 from app.services.security import CredentialSecurityError, generate_credential_key
 from app.release import config_paths, doctor as release_doctor, init_project, safe_config, v1_readiness, version_text
@@ -194,6 +200,7 @@ snapshot_app = typer.Typer(help="Read-only device config snapshots.")
 config_app = typer.Typer(help="Show safe local configuration.")
 release_app = typer.Typer(help="Release readiness checks.")
 nmap_app = typer.Typer(help="Controlled optional nmap scanner.")
+plugin_app = typer.Typer(help="Pure local generated plugin tools.")
 manual_node_app = typer.Typer(help="Manual local topology node corrections.")
 manual_edge_app = typer.Typer(help="Manual local topology edge corrections.")
 manual_note_app = typer.Typer(help="Manual local topology notes.")
@@ -212,6 +219,7 @@ app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(config_app, name="config")
 app.add_typer(release_app, name="release")
 app.add_typer(nmap_app, name="nmap")
+app.add_typer(plugin_app, name="plugin")
 topology_app.add_typer(manual_node_app, name="manual-node")
 topology_app.add_typer(manual_edge_app, name="manual-edge")
 topology_app.add_typer(manual_note_app, name="manual-note")
@@ -388,6 +396,81 @@ def _confirm_nmap_scan(target: str, profile: str, yes: bool) -> None:
         return
     if not typer.confirm(f"Run controlled nmap profile `{profile}` against {target}?", default=False):
         raise typer.Exit(code=1)
+
+
+@plugin_app.command("generate")
+def plugin_generate(
+    goal: str = typer.Option(..., "--goal"),
+    category: str | None = typer.Option(None, "--category"),
+) -> None:
+    """Generate a pending pure local plugin with DeepSeek and validate it."""
+    try:
+        draft = generate_plugin_from_goal(goal, "No existing registered tool can satisfy this request.", category_hint=category)
+        plugin = save_generated_plugin(draft)
+    except PluginGenerationError as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+    print_plugin_detail(plugin)
+
+
+@plugin_app.command("list")
+def plugin_list(status: str | None = typer.Option(None, "--status")) -> None:
+    print_plugin_list(list_plugins(status=status))
+
+
+@plugin_app.command("show")
+def plugin_show(tool_name: str) -> None:
+    print_plugin_detail(get_plugin(tool_name))
+
+
+@plugin_app.command("validate")
+def plugin_validate(tool_name: str) -> None:
+    try:
+        plugin = validate_plugin(tool_name)
+    except ValueError as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+    print_plugin_detail(plugin)
+
+
+@plugin_app.command("approve")
+def plugin_approve(tool_name: str) -> None:
+    try:
+        plugin = approve_plugin(tool_name)
+    except ValueError as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+    print_plugin_detail(plugin)
+
+
+@plugin_app.command("reject")
+def plugin_reject(tool_name: str) -> None:
+    print_plugin_detail(reject_plugin(tool_name))
+
+
+@plugin_app.command("disable")
+def plugin_disable(tool_name: str) -> None:
+    print_plugin_detail(disable_plugin(tool_name))
+
+
+@plugin_app.command("run")
+def plugin_run(tool_name: str, input_json: str = typer.Option("{}", "--input-json"), yes: bool = typer.Option(False, "--yes")) -> None:
+    import json
+
+    plugin = get_plugin(tool_name)
+    if plugin is None:
+        print_error("Plugin not found.")
+        raise typer.Exit(code=1)
+    if plugin.risk_level in {"medium", "high"} and not yes:
+        if not typer.confirm(f"Run {plugin.risk_level}-risk plugin `{tool_name}`?", default=False):
+            raise typer.Exit()
+    try:
+        inputs = json.loads(input_json)
+        result = run_plugin(tool_name, inputs)
+    except (ValueError, json.JSONDecodeError) as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+    print_plugin_run_result(result)
 
 
 @app.command()

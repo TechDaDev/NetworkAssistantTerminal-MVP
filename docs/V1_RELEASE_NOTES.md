@@ -1,6 +1,6 @@
-# v1.0.0-rc3 Release Notes
+# v1.0.0-rc4 Release Notes
 
-Network Assistant v1.0.0-rc3 is a local-first terminal network assistant for lab and controlled local network operations.
+Network Assistant v1.0.0-rc4 is a local-first terminal network assistant for lab and controlled local network operations.
 
 ## Included
 
@@ -23,12 +23,14 @@ Network Assistant v1.0.0-rc3 is a local-first terminal network assistant for lab
 - Release commands: `init`, `doctor`, `config`, `release readiness`
 - Added controlled optional Nmap integration with safe profiles, private-network enforcement, XML parsing, inventory saving, agent/chat/server routes, and doctor detection.
 - Added DeepSeek-generated custom Cisco IOS and MikroTik RouterOS command plans with command classification, mandatory backup snapshots, governed approval/preflight/execution, verification, rollback, CLI/server/agent support, and offline tests.
+- Added LLM-generated plugin tools with validation, approval, safe registry loading, plugin CLI/server/agent support, and planner plugin handoff into governed ChangePlans.
 
 ## Not Included
 
 - Web dashboard
 - Arbitrary SSH commands
 - LLM autonomous execution
+- Generated plugins with SSH, shell, socket, external API, credential, package install, or direct device execution capability
 - Firewall, NAT, route, Cisco trunk, or MikroTik bridge/VLAN execution
 - Production restore automation
 - Internet search from normal `ask`

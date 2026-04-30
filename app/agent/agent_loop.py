@@ -31,6 +31,9 @@ from app.services.llm_planner import LLMPlanner
 from app.services.manual_topology import add_manual_edge, add_manual_node, list_manual_edges, list_manual_nodes, list_manual_notes
 from app.services.network_detection import detect_local_network
 from app.services.nmap_tool import get_nmap_version, is_nmap_available, run_nmap_scan, save_nmap_results
+from app.services.plugin_generator import generate_plugin_from_goal, save_generated_plugin
+from app.services.plugin_registry import approve_plugin
+from app.services.plugin_runner import run_plugin
 from app.services.scanner import scan_network
 from app.services.topology import build_topology_snapshot, explain_topology, export_topology_json, export_topology_mermaid, get_latest_topology, rebuild_topology_with_manual
 from app.services.topology_awareness import analyze_plan_topology_risk
@@ -137,7 +140,7 @@ def _execute_allowed_intent(intent: ParsedIntent, memory: SessionMemory, risk: s
         return AgentResult(name, risk, True, "Supported agent actions are listed below.", data={"commands": _help_commands()})
     if name == "unknown":
         text = args.get("text") or intent.raw_text or ""
-        return AgentResult(name, risk, False, _unknown_help(str(text)), data={"examples": _fallback_examples()})
+        return _offer_plugin_generation(str(text), risk)
     if name == "status":
         return AgentResult(name, risk, True, "Current in-memory session state.", data=memory.__dict__)
     if name == "show_devices":
@@ -286,6 +289,8 @@ def _execute_allowed_intent(intent: ParsedIntent, memory: SessionMemory, risk: s
         return AgentResult(name, risk, True, f"Created MikroTik DHCP plan #{result.plan.id}. PLAN ONLY -- NO COMMANDS EXECUTED.", f"python main.py plan show {result.plan.id}")
     if name == "custom_plan_goal":
         return _execute_custom_plan_flow(args, risk)
+    if name == "generate_plugin_tool":
+        return _execute_plugin_generation_flow(_require_arg(args, "goal"), risk)
     if name == "connect_collect":
         ip = _require_arg(args, "ip")
         result = run_readonly_profile_collection(ip)
@@ -669,6 +674,7 @@ def _help_commands() -> dict[str, list[str]]:
         "Diagnostics": ["diagnose network", "inspect 192.168.88.1", "diagnose connectivity 192.168.88.1", "show risky management ports"],
         "Topology": ["build topology", "show topology", "explain topology", "topology risk check plan 1", "export topology mermaid"],
         "Knowledge": ["knowledge search routeros ssh", "knowledge list", "ask summarize latest scan"],
+        "Plugins": ["generate plugin for parsing interface status", "create plugin for a local report"],
         "Planning": [
             "plans",
             "show plan 1",
@@ -737,3 +743,36 @@ def _execute_custom_plan_flow(args: dict, risk: str) -> AgentResult:
         f"nat plan show {plan.id}",
         {"plan_id": plan.id, "execution_log_id": result.log.id if result.log else None, "status": result.log.status if result.log else None, "custom_plan_metadata": plan_metadata},
     )
+
+
+def _offer_plugin_generation(text: str, risk: str) -> AgentResult:
+    message = (
+        f"I do not have a registered tool for this task: {text or '--'}\n"
+        "I can ask the LLM to generate a local plugin tool.\n"
+        "The plugin will be saved as pending and validated before use.\n"
+        "It cannot execute SSH, shell, subprocess, or network calls."
+    )
+    try:
+        generate = Confirm.ask(message + "\nGenerate plugin?", default=False)
+    except (EOFError, OSError):
+        generate = False
+    if not generate:
+        return AgentResult("unknown", risk, False, _unknown_help(text), data={"examples": _fallback_examples()})
+    return _execute_plugin_generation_flow(text, "medium")
+
+
+def _execute_plugin_generation_flow(goal: str, risk: str) -> AgentResult:
+    draft = generate_plugin_from_goal(goal, "No existing registered tool can satisfy this request.")
+    plugin = save_generated_plugin(draft)
+    console.print(Panel(plugin.validation_report or "--", title=f"Plugin `{plugin.tool_name}` Validation", border_style="yellow"))
+    if plugin.validation_status != "passed":
+        return AgentResult("generate_plugin_tool", risk, False, f"Generated plugin `{plugin.tool_name}` failed validation.", f"nat plugin show {plugin.tool_name}", {"tool_name": plugin.tool_name})
+    if not Confirm.ask(f"Approve installing plugin `{plugin.tool_name}`?", default=False):
+        return AgentResult("generate_plugin_tool", risk, False, f"Plugin `{plugin.tool_name}` remains pending.", f"nat plugin show {plugin.tool_name}", {"tool_name": plugin.tool_name})
+    approved = approve_plugin(plugin.tool_name)
+    data = {"tool_name": approved.tool_name, "status": approved.status}
+    if Confirm.ask(f"Run plugin `{approved.tool_name}` now with empty inputs?", default=False):
+        run_result = run_plugin(approved.tool_name, {})
+        data["run_result"] = {"success": run_result.success, "summary": run_result.summary, "data": run_result.data, "warnings": run_result.warnings}
+        return AgentResult("generate_plugin_tool", risk, run_result.success, run_result.summary, f"nat plugin show {approved.tool_name}", data)
+    return AgentResult("generate_plugin_tool", risk, True, f"Plugin `{approved.tool_name}` approved and available.", f"nat plugin run {approved.tool_name}", data)
