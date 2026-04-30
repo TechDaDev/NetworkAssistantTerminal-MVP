@@ -18,6 +18,7 @@ app/agent/__init__.py
 app/agent/action_log.py
 app/agent/agent_loop.py
 app/agent/agent_models.py
+app/agent/custom_plan_prompt.py
 app/agent/intent_parser.py
 app/agent/policy.py
 app/agent/session_memory.py
@@ -29,6 +30,9 @@ app/services/config_planner.py
 app/services/config_snapshot.py
 app/services/context_builder.py
 app/services/credentials.py
+app/services/custom_command_validator.py
+app/services/custom_plan_executor.py
+app/services/custom_plan_generator.py
 app/services/device_connection.py
 app/services/diagnostics.py
 app/services/doc_fetcher.py
@@ -75,6 +79,11 @@ tests/test_command_policy.py
 tests/test_config_executor_validators.py
 tests/test_config_planner_validators.py
 tests/test_config_snapshots.py
+tests/test_custom_command_classification.py
+tests/test_custom_plan_agent_flow.py
+tests/test_custom_plan_execution.py
+tests/test_custom_plan_generation.py
+tests/test_custom_plan_preflight.py
 tests/test_doc_fetcher_safety.py
 tests/test_final_docs.py
 tests/test_init_doctor_config.py

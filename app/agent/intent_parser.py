@@ -342,6 +342,20 @@ def parse_intent(text: str, memory: SessionMemory | None = None) -> ParsedIntent
                 raw,
             )
 
+    if lowered.startswith(("configure ", "add nat ", "create firewall ", "configure cisco ", "configure mikrotik ", "add firewall ", "create cisco ", "create mikrotik ")):
+        values = _key_values(normalized)
+        platform = values.get("platform")
+        if platform is None:
+            if "mikrotik" in lowered or "routeros" in lowered:
+                platform = "mikrotik_routeros"
+            elif "cisco" in lowered:
+                platform = "cisco_ios"
+        return ParsedIntent(
+            "custom_plan_goal",
+            {"goal": normalized, "target_device_ip": values.get("device") or values.get("target"), "platform": platform},
+            raw,
+        )
+
     return ParsedIntent("unknown", {"text": normalized}, raw)
 
 

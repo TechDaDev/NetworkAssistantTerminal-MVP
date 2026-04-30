@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: network-assistant
-Version: 1.0.0rc2
+Version: 1.0.0rc3
 Summary: Local-first network assistant CLI with safe diagnostics, planning, snapshots, and controlled execution.
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown

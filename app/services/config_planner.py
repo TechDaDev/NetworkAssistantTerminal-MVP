@@ -14,6 +14,14 @@ from app.database import get_session, init_db
 from app.models import ApprovalLog, ChangePlan, CommandRun, Device
 from app.schemas import DiagnosticFinding
 from app.services.device_connection import DeviceConnectionError, run_readonly_command, run_readonly_profile_collection
+from app.services.custom_command_validator import (
+    classify_commands,
+    has_blocked_command,
+    has_double_confirmation,
+    validate_precheck_command,
+    validate_verification_command,
+)
+from app.services.custom_plan_generator import metadata_for_plan
 
 
 class ConfigPlanError(ValueError):
@@ -921,16 +929,17 @@ def preflight_findings(
                 detail="Plan cannot pass preflight without proposed commands.",
             )
         )
-    try:
-        _validate_planning_commands(plan.proposed_commands.splitlines() + plan.rollback_commands.splitlines())
-    except ConfigPlanError as exc:
-        findings.append(
-            DiagnosticFinding(
-                severity="high",
-                title="Unsafe planned command detected",
-                detail=str(exc),
+    if plan.plan_type not in {"custom_routeros_plan", "custom_cisco_plan"}:
+        try:
+            _validate_planning_commands(plan.proposed_commands.splitlines() + plan.rollback_commands.splitlines())
+        except ConfigPlanError as exc:
+            findings.append(
+                DiagnosticFinding(
+                    severity="high",
+                    title="Unsafe planned command detected",
+                    detail=str(exc),
+                )
             )
-        )
 
     if plan.plan_type == "vlan":
         findings.extend(_vlan_preflight_findings(plan))
@@ -944,6 +953,8 @@ def preflight_findings(
         findings.extend(_cisco_interface_preflight_findings(plan))
         if plan.plan_type == "cisco_access_port":
             findings.extend(_topology_findings_for_existing_plan(plan))
+    elif plan.plan_type in {"custom_routeros_plan", "custom_cisco_plan"}:
+        findings.extend(_custom_plan_preflight_findings(plan))
     else:
         findings.append(
             DiagnosticFinding(
@@ -1059,6 +1070,61 @@ def _topology_findings_for_existing_plan(plan: ChangePlan) -> list[DiagnosticFin
         ]
 
 
+def _custom_plan_preflight_findings(plan: ChangePlan) -> list[DiagnosticFinding]:
+    findings: list[DiagnosticFinding] = []
+    metadata = metadata_for_plan(plan)
+    platform = metadata.get("platform") or ("mikrotik_routeros" if plan.plan_type == "custom_routeros_plan" else "cisco_ios")
+    if plan.device is None:
+        return [DiagnosticFinding(severity="high", title="Device is missing", detail="The plan target device no longer exists in inventory.")]
+    if not any(credential.platform_hint == platform for credential in plan.device.credentials):
+        findings.append(
+            DiagnosticFinding(
+                severity="high",
+                title="Platform credentials missing",
+                detail=f"Custom plan requires saved `{platform}` SSH credentials.",
+            )
+        )
+    proposed = [line.strip() for line in (plan.proposed_commands or "").splitlines() if line.strip()]
+    rollback = [line.strip() for line in (plan.rollback_commands or "").splitlines() if line.strip()]
+    classifications = classify_commands(proposed + rollback, platform)
+    if has_blocked_command(classifications):
+        findings.append(
+            DiagnosticFinding(
+                severity="high",
+                title="Blocked custom command",
+                detail="One or more generated commands are blocked as security abuse.",
+                evidence=[item.command for item in classifications if item.category == "blocked_security_abuse"],
+            )
+        )
+    if has_double_confirmation(classifications):
+        findings.append(
+            DiagnosticFinding(
+                severity="info",
+                title="Double confirmation required",
+                detail="This custom plan may disrupt routing/firewall/NAT/DHCP/management behavior.",
+                recommendation="Execution must include both custom confirmation phrases.",
+            )
+        )
+    for command in metadata.get("precheck_commands", []):
+        try:
+            validate_precheck_command(str(command), platform)
+        except ValueError as exc:
+            findings.append(DiagnosticFinding(severity="high", title="Invalid precheck command", detail=str(exc)))
+    verification = metadata.get("verification_commands", [])
+    if not verification:
+        findings.append(DiagnosticFinding(severity="high", title="Verification commands missing", detail="Custom execution requires read-only verification commands."))
+    for command in verification:
+        try:
+            validate_verification_command(str(command), platform)
+        except ValueError as exc:
+            findings.append(DiagnosticFinding(severity="high", title="Invalid verification command", detail=str(exc)))
+    if not rollback:
+        findings.append(DiagnosticFinding(severity="high", title="Rollback commands missing", detail="Custom execution requires rollback commands."))
+    if not findings:
+        findings.append(DiagnosticFinding(severity="info", title="Custom preflight passed", detail="Custom command validation passed. Backup snapshot is still mandatory at execution."))
+    return findings
+
+
 def _transition_plan(plan_id: int, status: str, note: str | None = None) -> ChangePlan:
     init_db()
     with get_session() as session:
@@ -1107,7 +1173,14 @@ def _validate_approval_allowed(plan: ChangePlan) -> None:
     if any(finding.severity == "high" for finding in findings):
         raise ConfigPlanError("Cannot approve a plan with high-severity validation blockers.")
     commands = plan.proposed_commands.splitlines() + plan.rollback_commands.splitlines()
-    _validate_planning_commands(commands)
+    if plan.plan_type in {"custom_routeros_plan", "custom_cisco_plan"}:
+        metadata = metadata_for_plan(plan)
+        platform = metadata.get("platform") or ("mikrotik_routeros" if plan.plan_type == "custom_routeros_plan" else "cisco_ios")
+        classifications = classify_commands(commands, platform)
+        if has_blocked_command(classifications):
+            raise ConfigPlanError("Cannot approve a custom plan with blocked security-abuse commands.")
+    else:
+        _validate_planning_commands(commands)
 
 
 def _run_readonly_refresh(plan: ChangePlan) -> list[DiagnosticFinding]:
@@ -1134,6 +1207,8 @@ def _run_readonly_refresh(plan: ChangePlan) -> list[DiagnosticFinding]:
         return _run_mikrotik_dhcp_preflight_refresh(plan)
     if plan.plan_type in CISCO_INTERFACE_PLAN_TYPES:
         return _run_cisco_interface_preflight_refresh(plan)
+    if plan.plan_type in {"custom_routeros_plan", "custom_cisco_plan"}:
+        return _run_custom_preflight_refresh(plan)
     try:
         result = run_readonly_profile_collection(plan.device.ip_address)
     except DeviceConnectionError as exc:
@@ -1160,6 +1235,35 @@ def _run_readonly_refresh(plan: ChangePlan) -> list[DiagnosticFinding]:
             detail=f"{result.success_count} allowlisted read-only command(s) completed.",
         )
     ]
+
+
+def _run_custom_preflight_refresh(plan: ChangePlan) -> list[DiagnosticFinding]:
+    if plan.device is None:
+        return [DiagnosticFinding(severity="high", title="Read-only refresh skipped", detail="Plan device is missing.")]
+    metadata = metadata_for_plan(plan)
+    platform = metadata.get("platform") or ("mikrotik_routeros" if plan.plan_type == "custom_routeros_plan" else "cisco_ios")
+    if not any(credential.platform_hint == platform for credential in plan.device.credentials):
+        return [
+            DiagnosticFinding(
+                severity="high",
+                title="Read-only refresh skipped",
+                detail=f"No saved `{platform}` credentials exist for the device.",
+            )
+        ]
+    commands = [str(command) for command in metadata.get("precheck_commands", [])]
+    if not commands:
+        return [DiagnosticFinding(severity="medium", title="Read-only refresh skipped", detail="Custom plan has no precheck commands.")]
+    results = []
+    for command in commands:
+        try:
+            validate_precheck_command(command, platform)
+            results.append(run_readonly_command(plan.device.ip_address, command))
+        except (ValueError, DeviceConnectionError) as exc:
+            return [DiagnosticFinding(severity="medium", title="Read-only refresh failed", detail=str(exc))]
+    failures = [result for result in results if not result.success]
+    if failures:
+        return [DiagnosticFinding(severity="medium", title="Read-only refresh partially failed", detail=f"{len(failures)} precheck command(s) failed.")]
+    return [DiagnosticFinding(severity="info", title="Custom precheck refresh completed", detail=f"Ran {len(results)} read-only precheck command(s).")]
 
 
 def _run_mikrotik_preflight_refresh(plan: ChangePlan) -> list[DiagnosticFinding]:

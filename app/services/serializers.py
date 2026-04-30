@@ -19,6 +19,7 @@ from app.models import (
     TopologySnapshot,
 )
 from app.services.knowledge import KnowledgeSearchResult
+from app.services.custom_plan_generator import metadata_for_plan
 from app.schemas import DiagnosticResult, ScanResult
 
 
@@ -142,6 +143,7 @@ def change_plan_to_dict(plan: ChangePlan) -> dict:
         "proposed_commands": plan.proposed_commands,
         "rollback_commands": plan.rollback_commands,
         "validation_findings": plan.validation_findings,
+        "custom_plan_metadata": metadata_for_plan(plan),
         "preflight_status": plan.preflight_status,
         "preflight_checked_at": dt(plan.preflight_checked_at),
         "preflight_summary": plan.preflight_summary,

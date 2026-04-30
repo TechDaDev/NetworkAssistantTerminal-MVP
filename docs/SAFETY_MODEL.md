@@ -28,6 +28,8 @@ plan -> review -> approve -> preflight -> execute -> verify -> save/rollback
 
 The lifecycle exists to prevent accidental device changes.
 
+DeepSeek-generated custom Cisco IOS and MikroTik RouterOS plans use the same lifecycle. DeepSeek may draft precheck, proposed, rollback, and verification commands, but Python remains the safety controller and executor. Generated commands are classified before approval/preflight/execution. Security-abuse commands are blocked, and disruptive routing/firewall/NAT/DHCP/management commands require double confirmation.
+
 ## Approval and Confirmation
 
 - Plans require human review and approval before execution.
@@ -63,6 +65,7 @@ Preflight verifies stored or refreshed read-only evidence before execution.
 - Medium-risk actions require confirmation in agent mode.
 - High-risk actions such as execute/save/rollback are blocked from chat/agent and require direct CLI confirmation.
 - Controlled Nmap scans are medium-risk and require confirmation in agent mode. `nmap check` is low-risk.
+- Custom generated plans are high-risk. Agent mode must show the plan, ask approval, run preflight, capture a backup snapshot, require exact execution confirmation, verify, and roll back on failed verification.
 
 ## Integration Test Gates
 

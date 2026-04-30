@@ -61,7 +61,7 @@ def log_agent_action(
             confirmation_result=confirmation_result,
             executed=executed,
             success=bool(result.ok) if result else False,
-            result_summary=redact_secrets(result.message if result else ""),
+            result_summary=redact_secrets(_result_summary(result)),
             error_message=redact_secrets(error_message) if error_message else None,
         )
         session.add(log)
@@ -92,6 +92,14 @@ def new_agent_session_id(now: datetime | None = None) -> str:
     now = now or datetime.now()
     suffix = f"{id(now) & 0xFFFF:04x}"
     return f"agent-{now.strftime('%Y%m%d-%H%M%S')}-{suffix}"
+
+
+def _result_summary(result: AgentResult | None) -> str:
+    if result is None:
+        return ""
+    if not result.data:
+        return result.message
+    return result.message + "\nDATA: " + json.dumps(result.data, default=str)
 
 
 def _policy_text(decision: PolicyDecision) -> str:

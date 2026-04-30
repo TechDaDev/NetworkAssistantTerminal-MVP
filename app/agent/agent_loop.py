@@ -15,7 +15,10 @@ from app.agent.agent_models import AgentResult, AgentToolResult, ParsedIntent, P
 from app.agent.intent_parser import parse_intent
 from app.agent.policy import evaluate_agent_action
 from app.agent.session_memory import SessionMemory
-from app.services.config_planner import create_cisco_access_port_plan, create_cisco_description_plan, create_mikrotik_address_plan, create_mikrotik_dhcp_plan, create_vlan_plan, get_change_plan, list_change_plans, review_change_plan, run_preflight
+from app.services.config_planner import approve_change_plan, create_cisco_access_port_plan, create_cisco_description_plan, create_mikrotik_address_plan, create_mikrotik_dhcp_plan, create_vlan_plan, get_change_plan, list_change_plans, review_change_plan, run_preflight
+from app.services.config_executor import execute_change_plan
+from app.services.custom_plan_executor import DOUBLE_CONFIRMATION_PHRASE, custom_plan_requires_double_confirmation
+from app.services.custom_plan_generator import generate_custom_plan_from_goal, metadata_for_plan, save_custom_plan
 from app.services.config_snapshot import capture_manual_snapshot, generate_restore_guidance, list_snapshots, show_snapshot, write_snapshot_export_file
 from app.services.device_connection import run_readonly_profile_collection
 from app.services.diagnostics import diagnose_connectivity, diagnose_device, diagnose_management_ports, diagnose_network
@@ -37,7 +40,7 @@ from app.services.topology_exporter import write_topology_export_file, write_top
 console = Console()
 
 
-def run_agent(dry_policy: bool = False) -> None:
+def run_agent(dry_policy: bool = False, auto: bool = False) -> None:
     memory = SessionMemory()
     session_id = new_agent_session_id()
     _banner(session_id, dry_policy=dry_policy)
@@ -281,6 +284,8 @@ def _execute_allowed_intent(intent: ParsedIntent, memory: SessionMemory, risk: s
             comment=args.get("comment") or None,
         )
         return AgentResult(name, risk, True, f"Created MikroTik DHCP plan #{result.plan.id}. PLAN ONLY -- NO COMMANDS EXECUTED.", f"python main.py plan show {result.plan.id}")
+    if name == "custom_plan_goal":
+        return _execute_custom_plan_flow(args, risk)
     if name == "connect_collect":
         ip = _require_arg(args, "ip")
         result = run_readonly_profile_collection(ip)
@@ -670,6 +675,8 @@ def _help_commands() -> dict[str, list[str]]:
             "preflight plan 1",
             "plan cisco access-port device=192.168.88.20 interface=Gi0/5 vlan=30 description=LAB-PC-01",
             "plan mikrotik dhcp device=192.168.88.1 name=lab-dhcp interface=bridge network=192.168.50.0/24 gateway=192.168.50.1 pool-name=lab-pool pool-range=192.168.50.100-192.168.50.200",
+            "configure MikroTik load balancing using ether1 and ether2 device=192.168.88.1",
+            "configure Cisco static route device=192.168.88.20",
         ],
         "Workflows": [
             "workflow scan and diagnose",
@@ -693,3 +700,40 @@ def _nmap_result_data(result) -> dict:
         "live_hosts_count": result.live_hosts_count,
         "devices": [device.model_dump(mode="json") for device in result.devices],
     }
+
+
+def _execute_custom_plan_flow(args: dict, risk: str) -> AgentResult:
+    goal = _require_arg(args, "goal")
+    target = args.get("target_device_ip") or None
+    platform = args.get("platform") or None
+    draft = generate_custom_plan_from_goal(goal, target_device_ip=target, platform=platform)
+    if draft.has_missing_inputs:
+        console.print(Panel("\n".join(f"- {item}" for item in draft.missing_inputs), title="Missing Inputs", border_style="yellow"))
+        additions = [f"{item}: {Prompt.ask(item)}" for item in draft.missing_inputs]
+        draft = generate_custom_plan_from_goal(goal + "\nProvided inputs:\n" + "\n".join(additions), target_device_ip=target, platform=platform)
+        if draft.has_missing_inputs:
+            return AgentResult("custom_plan_goal", risk, False, "DeepSeek still requires missing inputs: " + ", ".join(draft.missing_inputs))
+    plan = save_custom_plan(draft)
+    plan_metadata = metadata_for_plan(plan)
+    console.print(Panel.fit(f"Saved custom plan #{plan.id}: {plan.title}\n{plan.description}", title="Custom Plan", border_style="yellow"))
+    console.print(Panel(plan.proposed_commands or "--", title="Proposed Commands", border_style="green"))
+    console.print(Panel(plan.rollback_commands or "--", title="Rollback Commands", border_style="yellow"))
+    if not Confirm.ask("Do you approve this custom plan?", default=False):
+        return AgentResult("custom_plan_goal", risk, False, f"Custom plan #{plan.id} saved as draft. Execution cancelled.", f"nat plan show {plan.id}", {"plan_id": plan.id, "custom_plan_metadata": plan_metadata})
+    approved = approve_change_plan(plan.id, note="Approved inside agent custom plan flow")
+    preflight = run_preflight(approved.id, refresh=True)
+    if preflight.plan.preflight_status != "passed":
+        return AgentResult("custom_plan_goal", risk, False, f"Custom plan #{plan.id} preflight did not pass: {preflight.plan.preflight_summary}", f"nat plan show {plan.id}", {"plan_id": plan.id, "custom_plan_metadata": plan_metadata})
+    double_phrase = None
+    if custom_plan_requires_double_confirmation(preflight.plan):
+        double_phrase = Prompt.ask(f"Type {DOUBLE_CONFIRMATION_PHRASE} to continue")
+    confirmation = Prompt.ask(f"Type EXECUTE CUSTOM PLAN {plan.id} to execute")
+    result = execute_change_plan(plan.id, confirmation=confirmation, double_confirmation=double_phrase)
+    return AgentResult(
+        "custom_plan_goal",
+        risk,
+        result.log is not None and result.log.status in {"success", "rolled_back"},
+        result.message,
+        f"nat plan show {plan.id}",
+        {"plan_id": plan.id, "execution_log_id": result.log.id if result.log else None, "status": result.log.status if result.log else None, "custom_plan_metadata": plan_metadata},
+    )

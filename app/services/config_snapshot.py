@@ -205,12 +205,22 @@ def snapshot_commands_for_plan(plan: ChangePlan) -> SnapshotCommandPlan:
     platform = _platform_for_plan(plan)
     commands: list[str]
     if platform == "cisco_ios":
-        commands = [
-            "show running-config",
-            "show vlan brief",
-            "show interfaces status",
-            "show interfaces trunk",
-        ]
+        if plan.plan_type == "custom_cisco_plan":
+            commands = [
+                "show running-config",
+                "show ip interface brief",
+                "show ip route",
+                "show access-lists",
+                "show interfaces status",
+                "show vlan brief",
+            ]
+        else:
+            commands = [
+                "show running-config",
+                "show vlan brief",
+                "show interfaces status",
+                "show interfaces trunk",
+            ]
         interface = _cisco_interface_from_plan(plan)
         if interface:
             commands.append(f"show running-config interface {interface}")
@@ -220,6 +230,19 @@ def snapshot_commands_for_plan(plan: ChangePlan) -> SnapshotCommandPlan:
             "/interface print",
             "/ip address print",
         ]
+        if plan.plan_type == "custom_routeros_plan":
+            commands.extend(
+                [
+                    "/ip route print",
+                    "/ip firewall nat print",
+                    "/ip firewall mangle print",
+                    "/ip firewall filter print",
+                    "/ip pool print",
+                    "/ip dhcp-server print",
+                    "/routing table print",
+                    "/routing rule print",
+                ]
+            )
         if plan.plan_type == "mikrotik_dhcp_server":
             commands.extend(
                 [
@@ -429,9 +452,9 @@ def _load_plan(session, plan_id: int) -> ChangePlan:
 
 
 def _platform_for_plan(plan: ChangePlan) -> str:
-    if plan.plan_type in {"mikrotik_address", "mikrotik_dhcp_server"}:
+    if plan.plan_type in {"mikrotik_address", "mikrotik_dhcp_server", "custom_routeros_plan"}:
         return "mikrotik_routeros"
-    if plan.plan_type in {"vlan", "cisco_interface_description", "cisco_access_port"}:
+    if plan.plan_type in {"vlan", "cisco_interface_description", "cisco_access_port", "custom_cisco_plan"}:
         return "cisco_ios"
     raise ConfigSnapshotError(f"Snapshots are not supported for plan type `{plan.plan_type}`.")
 

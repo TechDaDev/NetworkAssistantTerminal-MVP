@@ -26,6 +26,7 @@ from app.services.diagnostics import (
     diagnose_network,
 )
 from app.services.doc_fetcher import DocFetchError, save_fetched_document_as_knowledge, search_official_docs
+from app.services.custom_plan_generator import CustomPlanError, generate_custom_plan_from_goal, save_custom_plan
 from app.services.inventory import get_latest_scan_report, list_devices
 from app.services.knowledge import (
     KnowledgeError,
@@ -171,6 +172,14 @@ class PlanActionRequest(BaseModel):
 
 class PlanExecutionRequest(BaseModel):
     confirmation: str | None = None
+    double_confirmation: str | None = None
+
+
+class CustomPlanGenerateRequest(BaseModel):
+    goal: str
+    target_device_ip: str | None = None
+    platform: str | None = None
+    additional_context: dict | None = None
 
 
 class SnapshotCaptureRequest(BaseModel):
@@ -650,6 +659,23 @@ def plan_mikrotik_dhcp_endpoint(request: MikroTikDhcpPlanRequest) -> dict:
     }
 
 
+@api.post("/plan/custom/generate")
+def plan_custom_generate_endpoint(request: CustomPlanGenerateRequest) -> dict:
+    try:
+        draft = generate_custom_plan_from_goal(
+            request.goal,
+            target_device_ip=request.target_device_ip,
+            platform=request.platform,
+            additional_context=request.additional_context,
+        )
+        if draft.has_missing_inputs:
+            return {"ok": False, "missing_inputs": draft.missing_inputs, "draft": draft.model_dump(mode="json")}
+        plan = save_custom_plan(draft)
+    except CustomPlanError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "plan": change_plan_to_dict(plan), "warning": "PLAN ONLY -- NO COMMANDS EXECUTED"}
+
+
 @api.post("/plan/cisco/description")
 def plan_cisco_description_endpoint(request: CiscoDescriptionPlanRequest) -> dict:
     try:
@@ -756,11 +782,13 @@ def plan_execution_history_endpoint(plan_id: int) -> dict:
 @api.post("/plan/{plan_id}/execute")
 def plan_execute_endpoint(plan_id: int, request: PlanExecutionRequest | None = None, dry_run: bool = False) -> dict:
     try:
-        result = execute_change_plan(
-            plan_id,
-            dry_run=dry_run,
-            confirmation=request.confirmation if request else None,
-        )
+        kwargs = {
+            "dry_run": dry_run,
+            "confirmation": request.confirmation if request else None,
+        }
+        if request and request.double_confirmation is not None:
+            kwargs["double_confirmation"] = request.double_confirmation
+        result = execute_change_plan(plan_id, **kwargs)
     except ConfigExecutionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {

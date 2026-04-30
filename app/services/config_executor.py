@@ -17,6 +17,14 @@ from app.services.config_snapshot import (
     capture_pre_change_snapshot,
     capture_pre_rollback_snapshot,
 )
+from app.services.custom_plan_executor import (
+    DOUBLE_CONFIRMATION_PHRASE,
+    custom_plan_has_blocked_commands,
+    custom_plan_platform,
+    custom_plan_precheck_commands,
+    custom_plan_requires_double_confirmation,
+    custom_plan_verification_commands,
+)
 from app.services.security import CredentialSecurityError, decrypt_secret
 
 
@@ -87,7 +95,7 @@ VERIFY_COMMANDS = ("show vlan brief", "show interfaces status", "show interfaces
 CISCO_INTERFACE_PRE_CHECK_COMMANDS = ("show interfaces status", "show interfaces trunk", "show vlan brief")
 SAFE_CISCO_INTERFACE = r"(?:Gi|GigabitEthernet|Fa|FastEthernet|Te|TenGigabitEthernet|Eth|Ethernet)\d+(?:/\d+){1,3}"
 SAFE_CISCO_DESCRIPTION = r"[^;\|&`\$\n\r\x00-\x1f]{1,80}"
-SUPPORTED_EXECUTION_PLAN_TYPES = {"vlan", "mikrotik_address", "mikrotik_dhcp_server", "cisco_interface_description", "cisco_access_port"}
+SUPPORTED_EXECUTION_PLAN_TYPES = {"vlan", "mikrotik_address", "mikrotik_dhcp_server", "cisco_interface_description", "cisco_access_port", "custom_routeros_plan", "custom_cisco_plan"}
 MIKROTIK_PRE_CHECK_COMMANDS = ("/interface print", "/ip address print")
 MIKROTIK_POST_CHECK_COMMANDS = ("/ip address print",)
 MIKROTIK_VERIFY_COMMANDS = ("/ip address print", "/interface print")
@@ -109,15 +117,19 @@ def execute_change_plan(
     plan_id: int,
     dry_run: bool = False,
     confirmation: str | None = None,
+    double_confirmation: str | None = None,
 ) -> ExecutionResult:
     init_db()
     with get_session() as session:
         plan = _load_plan(session, plan_id)
         proposed = _plan_commands(plan.proposed_commands)
         rollback = _plan_commands(plan.rollback_commands)
-        if not dry_run:
-            validate_execution_confirmation("EXECUTE", plan_id, confirmation)
         credential = _validate_execution_requirements(plan, proposed, rollback)
+        if not dry_run:
+            if plan.plan_type in {"custom_routeros_plan", "custom_cisco_plan"}:
+                validate_custom_execution_confirmation(plan, confirmation, double_confirmation)
+            else:
+                validate_execution_confirmation("EXECUTE", plan_id, confirmation)
 
         if dry_run:
             return ExecutionResult(
@@ -139,6 +151,8 @@ def execute_change_plan(
         session.commit()
         log_id = log.id
 
+    if plan.plan_type in {"custom_routeros_plan", "custom_cisco_plan"}:
+        return _execute_custom_live(plan_id, log_id, credential.id, proposed, rollback, plan.plan_type)
     if credential.platform_hint == "mikrotik_routeros":
         return _execute_mikrotik_live(plan_id, log_id, credential.id, proposed, rollback, plan.plan_type)
     return _execute_live(plan_id, log_id, credential.id, proposed, rollback, plan.plan_type)
@@ -161,6 +175,14 @@ def validate_execution_confirmation(action: str, plan_id: int, confirmation: str
     expected = f"{action.upper()} PLAN {plan_id}"
     if confirmation != expected:
         raise ConfigExecutionError(f"Confirmation must exactly match `{expected}`.")
+
+
+def validate_custom_execution_confirmation(plan: ChangePlan, confirmation: str | None, double_confirmation: str | None = None) -> None:
+    expected = f"EXECUTE CUSTOM PLAN {plan.id}"
+    if confirmation != expected:
+        raise ConfigExecutionError(f"Confirmation must exactly match `{expected}`.")
+    if custom_plan_requires_double_confirmation(plan) and double_confirmation != DOUBLE_CONFIRMATION_PHRASE:
+        raise ConfigExecutionError(f"Double confirmation must exactly match `{DOUBLE_CONFIRMATION_PHRASE}`.")
 
 
 def validate_cisco_vlan_execution_commands(proposed: list[str], rollback: list[str]) -> None:
@@ -217,6 +239,10 @@ def verify_change_plan(plan_id: int) -> ExecutionResult:
             commands = _cisco_interface_verify_commands(proposed)
             output = _run_show_commands(connection, commands)
             status, message = _cisco_interface_verification_status(plan.plan_type, proposed, output)
+        elif plan.plan_type in {"custom_routeros_plan", "custom_cisco_plan"}:
+            output = _run_show_commands(connection, custom_plan_verification_commands(plan))
+            ok = _custom_verification_passed(output)
+            status, message = ("verified", "Custom plan verification passed.") if ok else ("verification_failed", "Custom plan verification failed.")
         else:
             output = _run_show_commands(connection, VERIFY_COMMANDS)
             status, message = _verification_status(proposed, output)
@@ -372,6 +398,17 @@ def rollback_change_plan(plan_id: int, confirmation: str | None = None) -> Execu
             rollback_output = connection.send_config_set(rollback)
             verify_output = _run_show_commands(connection, _cisco_interface_verify_commands(proposed))
             status, verify_message = _cisco_interface_rollback_verification_status(plan.plan_type, proposed, verify_output)
+        elif plan.plan_type in {"custom_routeros_plan", "custom_cisco_plan"}:
+            if plan.plan_type == "custom_routeros_plan":
+                rollback_output = _send_mikrotik_commands(connection, rollback)
+            else:
+                rollback_output = connection.send_config_set(rollback)
+            verify_output = _run_show_commands(connection, custom_plan_verification_commands(plan))
+            status, verify_message = (
+                ("manual_rollback_success", "Custom rollback verification passed.")
+                if _custom_verification_passed(verify_output)
+                else ("manual_rollback_failed", "Custom rollback verification failed.")
+            )
         else:
             rollback_output = connection.send_config_set(rollback)
             verify_output = _run_show_commands(connection, VERIFY_COMMANDS)
@@ -655,6 +692,132 @@ def _execute_mikrotik_live(
             connection.disconnect()
 
 
+def _execute_custom_live(
+    plan_id: int,
+    log_id: int,
+    credential_id: int,
+    proposed: list[str],
+    rollback: list[str],
+    plan_type: str,
+) -> ExecutionResult:
+    connection = None
+    execution_attempted = False
+    pre_output = ""
+    execution_output = ""
+    post_output = ""
+    platform = "mikrotik_routeros" if plan_type == "custom_routeros_plan" else "cisco_ios"
+    try:
+        with get_session() as session:
+            credential = session.scalar(
+                select(DeviceCredential)
+                .options(selectinload(DeviceCredential.device))
+                .where(DeviceCredential.id == credential_id)
+            )
+            if credential is None:
+                raise ConfigExecutionError("Stored credentials were removed before execution.")
+            connection = _open_mikrotik_connection(credential) if platform == "mikrotik_routeros" else _open_cisco_connection(credential)
+            plan = _load_plan(session, plan_id)
+            pre_commands = custom_plan_precheck_commands(plan)
+            verification_commands = custom_plan_verification_commands(plan)
+
+        capture_pre_change_snapshot(plan_id, connection=connection, execution_log_id=log_id)
+        pre_output = _run_show_commands(connection, pre_commands) if pre_commands else ""
+        execution_attempted = True
+        execution_output = (
+            _send_mikrotik_commands(connection, proposed)
+            if platform == "mikrotik_routeros"
+            else connection.send_config_set(proposed)
+        )
+        post_output = _run_show_commands(connection, verification_commands)
+        if _custom_verification_passed(post_output):
+            snapshot_warning = _try_capture_post_change_snapshot(plan_id, connection, log_id)
+            if snapshot_warning:
+                post_output += snapshot_warning
+            return _finish_execution(
+                plan_id=plan_id,
+                log_id=log_id,
+                status="success",
+                plan_status="executed",
+                pre_check_output=pre_output,
+                execution_output=execution_output,
+                post_check_output=post_output,
+                rollback_output="",
+                error_message=None,
+                dry_run=False,
+                message="Custom plan execution succeeded. Cisco startup-config was not saved automatically.",
+                proposed=proposed,
+                rollback=rollback,
+            )
+
+        rollback_warning = _try_capture_pre_rollback_snapshot(plan_id, connection, log_id)
+        rollback_output = (
+            _send_mikrotik_commands(connection, rollback)
+            if platform == "mikrotik_routeros"
+            else connection.send_config_set(rollback)
+        )
+        rollback_output += "\n\nPOST-ROLLBACK CHECKS\n" + _run_show_commands(connection, verification_commands)
+        rollback_output += _try_capture_post_rollback_snapshot(plan_id, connection, log_id)
+        if rollback_warning:
+            rollback_output += rollback_warning
+        return _finish_execution(
+            plan_id=plan_id,
+            log_id=log_id,
+            status="rolled_back",
+            plan_status="rolled_back",
+            pre_check_output=pre_output,
+            execution_output=execution_output,
+            post_check_output=post_output,
+            rollback_output=rollback_output,
+            error_message="Custom verification failed; rollback commands were applied automatically.",
+            dry_run=False,
+            message="Custom plan verification failed and rollback was applied.",
+            proposed=proposed,
+            rollback=rollback,
+        )
+    except Exception as exc:
+        rollback_output = ""
+        status = "failed"
+        plan_status = "approved" if not execution_attempted else "execution_failed"
+        if connection is not None and execution_attempted:
+            try:
+                rollback_warning = _try_capture_pre_rollback_snapshot(plan_id, connection, log_id)
+                rollback_output = (
+                    _send_mikrotik_commands(connection, rollback)
+                    if platform == "mikrotik_routeros"
+                    else connection.send_config_set(rollback)
+                )
+                rollback_output += _try_capture_post_rollback_snapshot(plan_id, connection, log_id)
+                if rollback_warning:
+                    rollback_output += rollback_warning
+                status = "rolled_back"
+                plan_status = "rolled_back"
+            except Exception as rollback_exc:
+                rollback_output = str(rollback_exc)
+                status = "rollback_failed"
+                plan_status = "execution_failed"
+        message = "Custom plan execution failed with status `{status}`."
+        if isinstance(exc, ConfigSnapshotError) and not execution_attempted:
+            message = "Pre-change snapshot failed. Execution was not started."
+        return _finish_execution(
+            plan_id=plan_id,
+            log_id=log_id,
+            status=status,
+            plan_status=plan_status,
+            pre_check_output=pre_output,
+            execution_output=execution_output,
+            post_check_output=post_output,
+            rollback_output=rollback_output,
+            error_message=str(exc),
+            dry_run=False,
+            message=message.format(status=status),
+            proposed=proposed,
+            rollback=rollback,
+        )
+    finally:
+        if connection is not None:
+            connection.disconnect()
+
+
 def _try_capture_post_change_snapshot(plan_id: int, connection, log_id: int) -> str:
     try:
         capture_post_change_snapshot(plan_id, connection=connection, execution_log_id=log_id)
@@ -677,6 +840,12 @@ def _try_capture_post_rollback_snapshot(plan_id: int, connection, log_id: int) -
     except Exception as exc:
         return f"\n\nPOST-ROLLBACK SNAPSHOT WARNING\n{exc}"
     return ""
+
+
+def _custom_verification_passed(output: str) -> bool:
+    lowered = output.lower()
+    failure_markers = ("invalid input", "bad command", "failure", "failed", "error:")
+    return not any(marker in lowered for marker in failure_markers)
 
 
 def _finish_execution(
@@ -753,6 +922,15 @@ def _validate_execution_requirements(
         credential = _mikrotik_credential(plan.device)
         _validate_mikrotik_dhcp_commands(proposed, rollback)
         return credential
+    if plan.plan_type in {"custom_routeros_plan", "custom_cisco_plan"}:
+        if custom_plan_has_blocked_commands(plan):
+            raise ConfigExecutionError("Custom plan contains blocked security-abuse commands.")
+        if not custom_plan_verification_commands(plan):
+            raise ConfigExecutionError("Custom plan requires verification commands.")
+        credential = _mikrotik_credential(plan.device) if plan.plan_type == "custom_routeros_plan" else _cisco_credential(plan.device)
+        if credential.platform_hint != custom_plan_platform(plan):
+            raise ConfigExecutionError("Custom plan platform does not match saved credentials.")
+        return credential
     if plan.plan_type in {"cisco_interface_description", "cisco_access_port"}:
         credential = _cisco_credential(plan.device)
         _validate_cisco_interface_commands(plan.plan_type, proposed, rollback)
@@ -783,6 +961,10 @@ def _validate_post_execution_plan(
         credential = _mikrotik_credential(plan.device)
         _validate_mikrotik_dhcp_commands(proposed, rollback)
         return credential
+    if plan.plan_type in {"custom_routeros_plan", "custom_cisco_plan"}:
+        if custom_plan_has_blocked_commands(plan):
+            raise ConfigExecutionError("Custom plan contains blocked security-abuse commands.")
+        return _mikrotik_credential(plan.device) if plan.plan_type == "custom_routeros_plan" else _cisco_credential(plan.device)
     if plan.plan_type in {"cisco_interface_description", "cisco_access_port"}:
         credential = _cisco_credential(plan.device)
         _validate_cisco_interface_commands(plan.plan_type, proposed, rollback)
@@ -840,7 +1022,7 @@ def _mikrotik_credential(device: Device) -> DeviceCredential:
 
 
 def _unsupported_plan_type_message(plan_type: str) -> str:
-    return "Only Cisco VLAN, Cisco interface, MikroTik address, and MikroTik DHCP plans are supported for execution operations."
+    return "Only Cisco VLAN/interface/custom, MikroTik address/DHCP/custom plans are supported for execution operations."
 
 
 def _validate_cisco_vlan_commands(proposed: list[str], rollback: list[str]) -> None:

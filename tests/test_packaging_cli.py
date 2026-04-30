@@ -14,7 +14,7 @@ def test_version_command_works():
 
     assert result.exit_code == 0
     assert "Network Assistant" in result.output
-    assert "Version: 1.0.0-rc2" in result.output
+    assert "Version: 1.0.0-rc3" in result.output
 
 
 def test_pyproject_contains_console_scripts():

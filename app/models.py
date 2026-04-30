@@ -196,6 +196,7 @@ class ChangePlan(Base):
     proposed_commands: Mapped[str] = mapped_column(Text)
     rollback_commands: Mapped[str] = mapped_column(Text)
     validation_findings: Mapped[str] = mapped_column(Text, default="[]")
+    custom_plan_metadata_json: Mapped[str] = mapped_column(Text, default="{}")
     preflight_status: Mapped[str] = mapped_column(String(30), default="not_run")
     preflight_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     preflight_summary: Mapped[str | None] = mapped_column(Text, nullable=True)

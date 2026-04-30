@@ -57,6 +57,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
     "create_cisco_access_port_plan": ToolSpec("create_cisco_access_port_plan", "Create a Cisco access-port plan.", "medium", True, reason="It creates a local configuration plan."),
     "create_mikrotik_address_plan": ToolSpec("create_mikrotik_address_plan", "Create a MikroTik address plan.", "medium", True, reason="It creates a local configuration plan."),
     "create_mikrotik_dhcp_plan": ToolSpec("create_mikrotik_dhcp_plan", "Create a MikroTik DHCP server plan.", "medium", True, reason="It creates a local configuration plan."),
+    "custom_plan_goal": ToolSpec("custom_plan_goal", "Generate and optionally execute a DeepSeek custom Cisco/RouterOS plan.", "high", True, reason="It can create and execute high-impact generated network commands after confirmation."),
     "fetch_docs_url": ToolSpec("fetch_docs_url", "Fetch public documentation into local knowledge.", "medium", True, reason="It makes an explicit internet request."),
     "workflow_scan_and_diagnose": ToolSpec("workflow_scan_and_diagnose", "Scan, enrich, diagnose, and build topology.", "medium", True, reason="It scans your local private network and runs passive enrichment."),
     "workflow_topology_report": ToolSpec("workflow_topology_report", "Build topology and write a Markdown report.", "low"),

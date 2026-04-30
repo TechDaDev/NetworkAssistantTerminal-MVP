@@ -87,6 +87,12 @@ from app.services.config_executor import (
     save_plan_config,
     verify_change_plan,
 )
+from app.services.custom_plan_executor import DOUBLE_CONFIRMATION_PHRASE, custom_plan_requires_double_confirmation
+from app.services.custom_plan_generator import (
+    CustomPlanError,
+    generate_custom_plan_from_goal,
+    save_custom_plan,
+)
 from app.services.config_snapshot import (
     ConfigSnapshotError,
     capture_manual_snapshot,
@@ -267,10 +273,11 @@ def chat(server_url: str = typer.Option("http://127.0.0.1:8765", "--server-url")
 def agent(
     ctx: typer.Context,
     dry_policy: bool = typer.Option(False, "--dry-policy", help="Parse and evaluate policy without executing tools."),
+    auto: bool = typer.Option(False, "--auto", help="Allow guided custom generated plan flows inside agent mode."),
 ) -> None:
     """Open the deterministic local network operations agent."""
     if ctx.invoked_subcommand is None:
-        run_agent(dry_policy=dry_policy)
+        run_agent(dry_policy=dry_policy, auto=auto)
 
 
 @agent_logs_app.callback()
@@ -707,6 +714,25 @@ def plan_cisco_access_port(
     print_change_plan(result.plan)
 
 
+@plan_app.command("custom-generate")
+def plan_custom_generate(
+    goal: str = typer.Option(..., "--goal", help="Custom network task goal."),
+    device: str | None = typer.Option(None, "--device", help="Inventory device IP."),
+    platform: str | None = typer.Option(None, "--platform", help="mikrotik_routeros or cisco_ios."),
+) -> None:
+    """Ask DeepSeek for a custom Cisco/RouterOS command plan and save it as a draft."""
+    try:
+        draft = generate_custom_plan_from_goal(goal, target_device_ip=device, platform=platform)
+        if draft.has_missing_inputs:
+            print_error("DeepSeek needs more input before a plan can be saved: " + ", ".join(draft.missing_inputs))
+            raise typer.Exit(code=1)
+        plan = save_custom_plan(draft)
+    except CustomPlanError as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=1) from exc
+    print_change_plan(plan)
+
+
 @plan_app.command("list")
 def plan_list() -> None:
     """List saved change plans."""
@@ -792,11 +818,18 @@ def plan_preflight(plan_id: int, refresh: bool = typer.Option(False, "--refresh"
 def plan_execute(plan_id: int, dry_run: bool = typer.Option(False, "--dry-run")) -> None:
     """Execute an approved, preflight-passed supported change plan."""
     confirmation = None
+    double_confirmation = None
     if not dry_run:
         print_error("Configuration execution can change the target device.")
-        confirmation = typer.prompt(f"Type EXECUTE PLAN {plan_id} to continue")
+        plan = get_change_plan(plan_id)
+        if plan and plan.plan_type in {"custom_routeros_plan", "custom_cisco_plan"}:
+            if custom_plan_requires_double_confirmation(plan):
+                double_confirmation = typer.prompt(f"Type {DOUBLE_CONFIRMATION_PHRASE} to continue")
+            confirmation = typer.prompt(f"Type EXECUTE CUSTOM PLAN {plan_id} to continue")
+        else:
+            confirmation = typer.prompt(f"Type EXECUTE PLAN {plan_id} to continue")
     try:
-        result = execute_change_plan(plan_id, dry_run=dry_run, confirmation=confirmation)
+        result = execute_change_plan(plan_id, dry_run=dry_run, confirmation=confirmation, double_confirmation=double_confirmation)
     except ConfigExecutionError as exc:
         print_error(str(exc))
         raise typer.Exit(code=1) from exc

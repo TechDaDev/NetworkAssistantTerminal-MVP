@@ -33,11 +33,15 @@ MIKROTIK_ROUTEROS_ALLOWED = {
     "/ipv6 route print",
     "/ip service print",
     "/ip firewall filter print",
+    "/ip firewall nat print",
+    "/ip firewall mangle print",
     "/ip dhcp-server lease print",
     "/ip pool print",
     "/ip dhcp-server print",
     "/ip dhcp-server network print",
     "/ip arp print",
+    "/routing table print",
+    "/routing rule print",
 }
 
 LINUX_ALLOWED = {

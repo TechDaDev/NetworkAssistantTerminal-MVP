@@ -56,6 +56,7 @@ This version can:
 - Run guided local diagnostics for the network, devices, management/service ports, and private-IP connectivity.
 - Start a localhost-only API server and use a Matrix-style terminal chat client.
 - Create local configuration change plans with proposed and rollback commands.
+- Create DeepSeek-generated custom Cisco IOS and MikroTik RouterOS command plans that are saved, validated, approved, backed up, executed, verified, and rolled back through the existing lifecycle.
 - Review, approve, reject, archive, and preflight-check change plans before execution eligibility.
 - Execute only approved, preflight-passed Cisco IOS VLAN plans and MikroTik address plans through an exact confirmation gate.
 - Verify executed plans, explicitly save Cisco IOS config with `write memory`, and manually rollback supported plans with confirmation.
@@ -88,6 +89,7 @@ This version does not:
 - Treat lab validation commands as permission to execute anything.
 - Let agent mode run arbitrary shell, SSH, RouterOS, Cisco config, or LLM-generated commands.
 - Run raw Nmap commands, arbitrary Nmap flags, vulnerability scripts, aggressive scans, UDP scans, all-port scans, public-IP scans, or hostname scans.
+- Let DeepSeek directly open SSH or execute commands. Generated custom commands must be saved as a `ChangePlan` and pass classification, approval, preflight, backup, confirmation, verification, and logging.
 - Execute, save, rollback, delete credentials, or delete knowledge from agent mode.
 - Treat ARP or same-subnet adjacency as proof of physical cabling.
 

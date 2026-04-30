@@ -4,6 +4,7 @@
 
 - Local/private network detection and safe scan
 - Optional controlled Nmap scans with safe profiles only: `ping`, `common-ports`, and `service-light`
+- DeepSeek-generated custom Cisco IOS and MikroTik RouterOS command plans saved as governed `ChangePlan` records
 - Passive enrichment
 - Read-only SSH collection through command allowlists
 - Device diagnostics
@@ -25,11 +26,12 @@ Execution is available only through approved plans, passed preflight, exact conf
 - Cisco IOS access-port execution
 - MikroTik RouterOS IP address execution
 - MikroTik RouterOS DHCP server execution
+- DeepSeek-generated custom Cisco IOS and MikroTik RouterOS plan execution after approval, preflight, mandatory backup snapshot, exact confirmation, verification, and rollback-on-verification-failure
 
 ## Not Supported
 
 - Arbitrary SSH commands
-- LLM-generated command execution
+- LLM-generated command execution outside saved, validated, user-approved custom plans
 - Firewall execution
 - NAT execution
 - Route execution
@@ -42,3 +44,4 @@ Execution is available only through approved plans, passed preflight, exact conf
 - Chat/agent execution for high-risk actions
 - Internet search from normal `ask`
 - Raw Nmap execution, arbitrary Nmap flags, vulnerability scripts, aggressive scans, UDP scans, all-port scans, public targets, and hostname targets
+- Credential theft, password bypass, exploit tooling, hidden downloads/imports, reset/reboot, or secret/user-management commands in generated custom plans

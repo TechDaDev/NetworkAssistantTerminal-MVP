@@ -54,8 +54,10 @@ def _run_lightweight_migrations() -> None:
         )
     if "preflight_checked_at" not in existing_columns:
         statements.append("ALTER TABLE change_plans ADD COLUMN preflight_checked_at DATETIME")
-    if "preflight_summary" not in existing_columns:
-        statements.append("ALTER TABLE change_plans ADD COLUMN preflight_summary TEXT")
+        if "preflight_summary" not in existing_columns:
+            statements.append("ALTER TABLE change_plans ADD COLUMN preflight_summary TEXT")
+        if "custom_plan_metadata_json" not in existing_columns:
+            statements.append("ALTER TABLE change_plans ADD COLUMN custom_plan_metadata_json TEXT DEFAULT '{}'")
     if "device_config_snapshots" in inspector.get_table_names():
         snapshot_columns = {column["name"] for column in inspector.get_columns("device_config_snapshots")}
         if "plan_id" not in snapshot_columns:
