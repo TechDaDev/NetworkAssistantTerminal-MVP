@@ -15,7 +15,7 @@ from app.services.nmap_tool import get_nmap_version
 from app.services.security import generate_credential_key
 
 
-DISPLAY_VERSION = "1.0.0-rc3"
+DISPLAY_VERSION = "1.0.0-rc4"
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8765
 REQUIRED_TABLES = {
