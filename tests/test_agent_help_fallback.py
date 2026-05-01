@@ -4,6 +4,14 @@ from app.agent.session_memory import SessionMemory
 
 def test_unknown_intent_fallback_returns_examples(monkeypatch):
     monkeypatch.setattr("app.agent.agent_loop.log_agent_action", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        "app.agent.agent_loop.retrieve_relevant_tools",
+        lambda *_args, **_kwargs: [type("Tool", (), {"tool_name": "plugin_generate"})()],
+    )
+    monkeypatch.setattr(
+        "app.agent.agent_loop.retrieve_relevant_skills",
+        lambda *_args, **_kwargs: [type("Skill", (), {"metadata": type("Meta", (), {"skill_name": "plugin_factory"})()})()],
+    )
 
     result = process_agent_input("do some network magic", SessionMemory(), session_id="test-session")
 

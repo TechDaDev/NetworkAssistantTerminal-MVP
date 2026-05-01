@@ -6,6 +6,7 @@ risk_level: medium
 tools:
   - detect_network
   - scan_network
+  - answer_network_fact
   - show_devices
   - show_report
   - diagnose_network
@@ -14,6 +15,10 @@ triggers:
   - scan my network
   - find devices
   - discover devices
+  - what is my gateway
+  - what is the gateway ip
+  - what is my local ip
+  - what subnet am i connected to
   - what is connected to my network
   - show open ports
   - check services
@@ -41,3 +46,19 @@ Use this skill when the user wants to discover local devices, see what is connec
 7. Recommend enrichment, controlled Nmap, or topology only when the result suggests it.
 
 Use Nmap only when the user asks for deeper service detail or explicitly asks for Nmap. Do not run public scans, hostnames, raw flags, vulnerability scripts, UDP scans, or CIDRs larger than `/24`.
+
+## Gateway / Local Network Fact Questions
+
+Use `answer_network_fact` when the user asks about:
+- gateway IP
+- gateway vendor
+- gateway type
+- gateway ports
+- local IP
+- local subnet
+- network interface
+
+Answer from local network detection and inventory first.
+If inventory is missing, ask for scan/enrich.
+Do not generate a plugin.
+Do not generate a custom plan.

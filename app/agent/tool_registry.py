@@ -52,6 +52,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
     "enrich_devices": ToolSpec("enrich_devices", "Run passive enrichment on stored devices.", "medium", True, reason="It may connect to discovered service ports for banners/titles."),
     "connect_collect": ToolSpec("connect_collect", "Run allowlisted read-only collection.", "medium", True, reason="It opens SSH with stored credentials and runs read-only allowlisted commands."),
     "router_connect_workflow": ToolSpec("router_connect_workflow", "Detect gateway and guide read-only router connection.", "medium", True, reason="It may scan/enrich or open read-only SSH collection after confirmation."),
+    "answer_network_fact": ToolSpec("answer_network_fact", "Answer local network fact questions from detection and inventory.", "low"),
     "preflight_plan_refresh": ToolSpec("preflight_plan_refresh", "Run preflight with read-only refresh.", "medium", True, reason="It may connect read-only using stored credentials."),
     "preflight_plan": ToolSpec("preflight_plan", "Run stored-data preflight.", "low"),
     "review_plan": ToolSpec("review_plan", "Mark a plan reviewed.", "medium", True, reason="It changes local plan lifecycle state."),

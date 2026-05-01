@@ -14,6 +14,7 @@ def test_required_tools_exist_in_index():
         "show_device",
         "show_report",
         "detect_network",
+        "answer_network_fact",
         "scan_network",
         "enrich_devices",
         "nmap_check",

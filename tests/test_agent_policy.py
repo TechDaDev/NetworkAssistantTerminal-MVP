@@ -36,3 +36,11 @@ def test_raw_ssh_input_is_blocked():
 
     assert not decision.allowed
     assert "Unsafe input blocked" in decision.message
+
+
+def test_answer_network_fact_is_low_risk_without_confirmation():
+    decision = evaluate_agent_action("answer_network_fact", {})
+
+    assert decision.allowed
+    assert decision.risk_level == "low"
+    assert not decision.requires_confirmation

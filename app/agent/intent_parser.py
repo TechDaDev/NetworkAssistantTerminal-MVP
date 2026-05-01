@@ -167,6 +167,29 @@ def parse_intent(text: str, memory: SessionMemory | None = None) -> ParsedIntent
     }:
         return ParsedIntent("router_connect_workflow", raw_text=raw)
 
+    if phrase in {
+        "what is my gateway",
+        "what is the gateway ip",
+        "what is the network gateway",
+        "what is the gateway",
+        "what is the vendor of the gateway",
+        "what is the vendor of the network gateway",
+        "what type is the gateway",
+        "is the gateway in inventory",
+        "what ports are open on the gateway",
+        "what subnet am i connected to",
+        "what network am i connected to",
+        "what is my local ip",
+        "what is my network interface",
+        "gateway info",
+        "gateway information",
+        "show gateway info",
+        "show gateway information",
+        "what is my network",
+        "what network am i on",
+    }:
+        return ParsedIntent("answer_network_fact", {"question": phrase}, raw)
+
     if lowered in {"lab checklist", "show lab checklist"}:
         return ParsedIntent("lab_checklist", raw_text=raw)
     if lowered.startswith("lab validate device "):

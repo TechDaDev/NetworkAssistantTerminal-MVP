@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
-from rich.json import JSON
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
@@ -15,6 +13,7 @@ from app.agent.agent_models import AgentResult, AgentToolResult, ParsedIntent, P
 from app.agent.domain_guard import NETWORK_ONLY_MESSAGE, decide_network_domain, is_plugin_worthy_request
 from app.agent.intent_parser import parse_intent
 from app.agent.policy import evaluate_agent_action
+from app.agent.result_renderer import is_trace_enabled, print_result, set_trace
 from app.agent.session_memory import SessionMemory
 from app.agent.skill_registry import load_skill_documents
 from app.agent.skill_retriever import retrieve_relevant_skills
@@ -37,6 +36,7 @@ from app.services.lab_validation import lab_checklist, validate_lab_device, vali
 from app.services.llm_planner import LLMPlanner
 from app.services.manual_topology import add_manual_edge, add_manual_node, list_manual_edges, list_manual_nodes, list_manual_notes
 from app.services.network_detection import detect_local_network
+from app.services.network_fact import answer_network_fact
 from app.services.nmap_tool import get_nmap_version, is_nmap_available, run_nmap_scan, save_nmap_results
 from app.services.plugin_generator import generate_plugin_from_goal, save_generated_plugin
 from app.services.plugin_registry import approve_plugin
@@ -57,6 +57,19 @@ def run_agent(dry_policy: bool = False, auto: bool = False) -> None:
     console.print("[green]Type `help` for commands. Type `exit` to leave.[/green]")
     while True:
         text = Prompt.ask("[bold green]na>[/bold green]").strip()
+        lowered = text.lower()
+        if lowered == "trace on":
+            set_trace(True)
+            console.print("[yellow]Trace mode enabled — raw details will be shown.[/yellow]")
+            continue
+        if lowered == "trace off":
+            set_trace(False)
+            console.print("[green]Trace mode disabled.[/green]")
+            continue
+        if lowered == "trace status":
+            state = "enabled" if is_trace_enabled() else "disabled"
+            console.print(f"[bold]Trace mode:[/bold] {state}")
+            continue
         if parse_intent(text, memory).tool_name == "exit":
             console.print("[green]Session closed.[/green]")
             return
@@ -66,7 +79,7 @@ def run_agent(dry_policy: bool = False, auto: bool = False) -> None:
         if not text:
             continue
         result = process_agent_input(text, memory, session_id=session_id, dry_policy=dry_policy)
-        _print_result(result)
+        print_result(result)
 
 
 def process_agent_input(
@@ -327,6 +340,16 @@ def _execute_allowed_intent(intent: ParsedIntent, memory: SessionMemory, risk: s
         return AgentResult(name, risk, True, f"Read-only collection completed: {result.success_count} succeeded, {result.failure_count} failed.", f"python main.py command history {ip}")
     if name == "router_connect_workflow":
         return _execute_router_connect_workflow(intent.raw_text or "connect to my router", risk)
+    if name == "answer_network_fact":
+        fact = answer_network_fact(intent.raw_text)
+        data = fact.as_dict()
+        gateway = fact.gateway_ip or "unknown"
+        if fact.in_inventory:
+            message = f"Gateway {gateway}: {fact.vendor}, {fact.device_type}."
+        else:
+            message = f"Gateway {gateway} detected but not in inventory."
+        next_cmd = None if fact.in_inventory else "nat scan"
+        return AgentResult(name, risk, True, message, next_cmd, data)
     if name == "fetch_docs_url":
         result = save_fetched_document_as_knowledge(
             url=_require_arg(args, "url"),
@@ -569,21 +592,8 @@ def _dry_policy_result(intent: ParsedIntent, decision: PolicyDecision) -> AgentR
 
 
 def _print_result(result: AgentResult) -> None:
-    table = Table.grid(padding=(0, 2))
-    table.add_column(style="bold green")
-    table.add_column()
-    table.add_row("Action:", result.action)
-    table.add_row("Risk:", result.risk_level)
-    table.add_row("Policy:", result.policy_decision or "allowed")
-    table.add_row("Result:", result.message)
-    if result.next_command:
-        table.add_row("Next:", result.next_command)
-    console.print(Panel(table, title="Network Assistant Agent", border_style="green" if result.ok else "yellow", expand=False))
-    if result.data:
-        compact = json.dumps(result.data, indent=2, default=str)
-        if len(compact) > 3000:
-            compact = compact[:3000] + "\n... truncated ..."
-        console.print(JSON(compact))
+    """Delegate to the result renderer (kept for backward-compat with tests)."""
+    print_result(result)
 
 
 def _update_memory(intent: ParsedIntent, result: AgentResult, memory: SessionMemory) -> None:
@@ -859,11 +869,31 @@ def _offer_plugin_generation(text: str, risk: str) -> AgentResult:
     skills = retrieve_relevant_skills(text, limit=3)
     if not domain.is_network_related:
         return AgentResult("unknown", risk, False, NETWORK_ONLY_MESSAGE)
+
+    # High-confidence direct execution: if the top retrieved tool maps to a
+    # known intent, re-route there instead of returning unknown.
+    if tools:
+        top_tool_name = tools[0].tool_name
+        if top_tool_name in _HIGH_CONFIDENCE_TOOLS:
+            intent = ParsedIntent(top_tool_name, {"text": text}, text)
+            decision = evaluate_agent_action(top_tool_name, intent.args)
+            if decision.allowed:
+                if not is_trace_enabled():
+                    console.print(
+                        f"[dim]Matched tool: {top_tool_name}"
+                        + (f" / skill: {skills[0].metadata.skill_name}" if skills else "")
+                        + "[/dim]"
+                    )
+                return execute_agent_intent(intent, SessionMemory(), decision)
+
     if not is_plugin_worthy_request(text):
-        data = {
-            "relevant_tools": [tool.tool_name for tool in tools],
-            "relevant_skills": [skill.metadata.skill_name for skill in skills],
-        }
+        # Never show raw retrieved tool/skill data unless trace mode is on
+        data: dict | None = None
+        if is_trace_enabled():
+            data = {
+                "relevant_tools": [tool.tool_name for tool in tools],
+                "relevant_skills": [skill.metadata.skill_name for skill in skills],
+            }
         return AgentResult("unknown", risk, False, _unknown_help(text), data=data)
     message = (
         f"I do not have a registered tool for this task: {text or '--'}\n"
@@ -878,6 +908,18 @@ def _offer_plugin_generation(text: str, risk: str) -> AgentResult:
     if not generate:
         return AgentResult("unknown", risk, False, _unknown_help(text), data={"examples": _fallback_examples()})
     return _execute_plugin_generation_flow(text, "medium")
+
+
+# Tools that the retriever may surface and that the agent loop can directly execute
+# when no exact parse intent was found.  Low-risk only.
+_HIGH_CONFIDENCE_TOOLS = frozenset({
+    "answer_network_fact",
+    "detect_network",
+    "diagnose_network",
+    "show_devices",
+    "show_report",
+    "nmap_check",
+})
 
 
 def _execute_plugin_generation_flow(goal: str, risk: str) -> AgentResult:

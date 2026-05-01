@@ -57,3 +57,19 @@ Use this skill when the user wants to connect to, inspect, check, log into, or c
 - Do not generate a plugin for router connection requests.
 - Do not execute configuration commands.
 - Do not run arbitrary SSH commands.
+
+## Gateway / Local Network Fact Questions
+
+Use `answer_network_fact` when the user asks about:
+- gateway IP
+- gateway vendor
+- gateway type
+- gateway ports
+- local IP
+- local subnet
+- network interface
+
+Answer from local network detection and inventory first.
+If inventory is missing, ask for scan/enrich.
+Do not generate a plugin.
+Do not generate a custom plan.
