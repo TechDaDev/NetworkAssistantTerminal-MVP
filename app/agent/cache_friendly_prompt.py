@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 
 from app.agent.domain_guard import decide_network_domain
-from app.agent.skill_registry import SKILL_INDEX_VERSION, load_skill_documents
+from app.agent.skill_prompt_catalog import build_skill_catalog_xml
+from app.agent.skill_registry import SKILL_INDEX_VERSION, list_skill_summaries
 from app.agent.skill_retriever import retrieve_relevant_skills
 from app.agent.task_chainer import build_task_chain
 from app.agent.tool_capability_index import TOOL_CAPABILITY_INDEX_VERSION, list_tool_capabilities
@@ -12,10 +13,7 @@ from app.agent.tool_retriever import retrieve_relevant_tools
 
 def build_static_agent_prompt() -> str:
     tools = [tool.model_dump(mode="json") for tool in sorted(list_tool_capabilities(), key=lambda item: item.tool_name)]
-    skills = [
-        document.metadata.model_dump(mode="json")
-        for document in sorted(load_skill_documents(), key=lambda item: item.metadata.skill_name)
-    ]
+    skills = [summary.model_dump(mode="json") for summary in list_skill_summaries()]
     return "\n".join(
         [
             "You are Network Assistant's planner for local network operations.",
@@ -42,11 +40,13 @@ def build_dynamic_agent_context(user_request: str, session_context: dict) -> str
     skills = retrieve_relevant_skills(user_request)
     selected = tools[0].tool_name if tools else ""
     chain = build_task_chain(user_request, selected) if selected else []
+    skill_catalog = build_skill_catalog_xml(skills)
     body = {
         "user_request": user_request,
         "domain_decision": domain.model_dump(mode="json"),
         "session_context": session_context,
         "relevant_tools": [tool.model_dump(mode="json") for tool in tools],
+        "available_skills": skill_catalog,
         "followup_tool_suggestions": chain[1:],
         "trace": {
             "static_prompt_version": f"TOOL_CAPABILITY_INDEX_VERSION {TOOL_CAPABILITY_INDEX_VERSION} / SKILL_INDEX_VERSION {SKILL_INDEX_VERSION}",
@@ -54,15 +54,7 @@ def build_dynamic_agent_context(user_request: str, session_context: dict) -> str
             "relevant_skills": [skill.metadata.skill_name for skill in skills],
         },
     }
-    skill_bodies = [
-        {
-            "skill_name": skill.metadata.skill_name,
-            "metadata": skill.metadata.model_dump(mode="json"),
-            "body": skill.body,
-        }
-        for skill in skills
-    ]
-    return json.dumps(body, indent=2, sort_keys=True, default=str) + "\n\nRelevant skill bodies:\n" + json.dumps(skill_bodies, indent=2, sort_keys=True)
+    return json.dumps(body, indent=2, sort_keys=True, default=str)
 
 
 def build_llm_planner_messages(user_request: str, session_context: dict) -> list[dict]:

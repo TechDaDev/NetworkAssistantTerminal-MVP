@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import re
 
 from rich.console import Console
 from rich.panel import Panel
@@ -15,11 +16,12 @@ from app.agent.intent_parser import parse_intent
 from app.agent.policy import evaluate_agent_action
 from app.agent.result_renderer import is_trace_enabled, print_result, set_trace
 from app.agent.session_memory import SessionMemory
-from app.agent.skill_registry import load_skill_documents
+from app.agent.skill_registry import get_skill, load_skill_documents
 from app.agent.skill_retriever import retrieve_relevant_skills
 from app.agent.task_chainer import build_task_chain
 from app.agent.tool_capability_index import list_tool_capabilities
 from app.agent.tool_retriever import retrieve_relevant_tools
+from app.config import settings
 from app.services.config_planner import approve_change_plan, create_cisco_access_port_plan, create_cisco_description_plan, create_mikrotik_address_plan, create_mikrotik_dhcp_plan, create_vlan_plan, get_change_plan, list_change_plans, review_change_plan, run_preflight
 from app.services.config_executor import execute_change_plan
 from app.services.custom_plan_executor import DOUBLE_CONFIRMATION_PHRASE, custom_plan_requires_double_confirmation
@@ -42,6 +44,7 @@ from app.services.plugin_generator import generate_plugin_from_goal, save_genera
 from app.services.plugin_registry import approve_plugin
 from app.services.plugin_runner import run_plugin
 from app.services.scanner import scan_network
+from app.services.skill_planner import normalize_tool_name, select_skill_plan
 from app.services.topology import build_topology_snapshot, explain_topology, export_topology_json, export_topology_mermaid, get_latest_topology, rebuild_topology_with_manual
 from app.services.topology_awareness import analyze_plan_topology_risk
 from app.services.topology_exporter import write_topology_export_file, write_topology_report_file
@@ -89,10 +92,45 @@ def process_agent_input(
     dry_policy: bool = False,
     confirm_fn=None,
 ) -> AgentResult:
-    intent = parse_intent(text, memory)
+    control_result = _trace_control_result(text)
+    if control_result is not None:
+        return control_result
+
+    parsed_intent = parse_intent(text, memory)
+    intent = parsed_intent
+    planner_trace: dict | None = None
+
+    if parsed_intent.tool_name == "exit":
+        return AgentResult("exit", "low", True, "Session closed.")
+    if parsed_intent.tool_name == "clear":
+        return AgentResult("clear", "low", True, "Screen cleared.")
+
     domain = decide_network_domain(text)
-    if intent.tool_name in {"unknown", "ask", "generate_plugin_tool", "custom_plan_goal"} and not domain.is_network_related:
+    if parsed_intent.tool_name in {
+        "blocked_request",
+        "execute_plan",
+        "save_plan",
+        "rollback_plan",
+        "delete_knowledge",
+        "delete_credentials",
+        "delete_manual_topology",
+    }:
+        intent = parsed_intent
+    elif parsed_intent.tool_name in {"help", "list_tools", "list_skills", "status"}:
+        intent = parsed_intent
+    elif not domain.is_network_related and parsed_intent.tool_name in {"unknown", "ask", "generate_plugin_tool", "custom_plan_goal"}:
         intent = ParsedIntent("blocked_request", {"reason": NETWORK_ONLY_MESSAGE, "text": text}, text)
+    elif not settings.llm_enabled:
+        intent = parsed_intent
+    elif _is_explicit_cli_like(text, parsed_intent):
+        intent = parsed_intent
+    else:
+        planned = _intent_from_skill_planner(text, memory, parsed_intent)
+        if planned is not None:
+            intent, planner_trace = planned
+        else:
+            intent = parsed_intent
+
     decision = evaluate_agent_action(intent.tool_name, intent.args)
     confirmation_result = "not_required"
     executed = False
@@ -123,6 +161,7 @@ def process_agent_input(
                 return result
 
         result = execute_agent_intent(intent, memory, decision)
+        _attach_planner_trace(result, planner_trace)
         result.policy_decision = _policy_label(decision)
         executed = True
         _update_memory(intent, result, memory)
@@ -708,6 +747,119 @@ def _as_tool_result(result: AgentResult) -> AgentToolResult:
         suggested_commands=suggested,
         next_actions=suggested,
     )
+
+
+def _trace_control_result(text: str) -> AgentResult | None:
+    lowered = text.strip().lower()
+    if lowered == "trace on":
+        set_trace(True)
+        return AgentResult("trace", "low", True, "Trace mode enabled.")
+    if lowered == "trace off":
+        set_trace(False)
+        return AgentResult("trace", "low", True, "Trace mode disabled.")
+    if lowered == "trace status":
+        state = "enabled" if is_trace_enabled() else "disabled"
+        return AgentResult("trace", "low", True, f"Trace mode: {state}")
+    return None
+
+
+def _is_explicit_cli_like(text: str, parsed_intent: ParsedIntent) -> bool:
+    normalized = " ".join(text.strip().split())
+    lowered = normalized.lower()
+    if parsed_intent.tool_name in {
+        "help",
+        "list_tools",
+        "list_skills",
+        "status",
+        "exit",
+        "clear",
+        "blocked_request",
+    }:
+        return True
+    if re.search(r"\b[a-z0-9_-]+=", lowered):
+        return True
+    explicit_prefixes = (
+        "nmap ",
+        "show ",
+        "knowledge ",
+        "plan ",
+        "preflight ",
+        "export ",
+        "capture ",
+        "workflow ",
+        "prepare ",
+        "lab ",
+        "add manual topology ",
+        "topology report to ",
+    )
+    return lowered.startswith(explicit_prefixes)
+
+
+def _intent_from_skill_planner(
+    text: str,
+    memory: SessionMemory,
+    parsed_intent: ParsedIntent,
+) -> tuple[ParsedIntent, dict] | None:
+    candidate_skills = retrieve_relevant_skills(text, limit=6)
+    candidate_tools = retrieve_relevant_tools(text, limit=8)
+    if not candidate_skills or not candidate_tools:
+        return None
+
+    plan = select_skill_plan(
+        user_request=text,
+        session_context=memory.__dict__,
+        candidate_skills=candidate_skills,
+        candidate_tools=candidate_tools,
+    )
+    if plan.selected_skill == "none" or plan.selected_tool == "none":
+        return None
+
+    selected_tool = normalize_tool_name(plan.selected_tool)
+    try:
+        selected_skill_doc = get_skill(plan.selected_skill)
+    except KeyError:
+        return None
+    args = _seed_args_for_selected_tool(selected_tool, parsed_intent, text)
+
+    planner_trace = {
+        "selected_skill": selected_skill_doc.metadata.skill_name,
+        "selected_tool": selected_tool,
+        "planner_reason": plan.reason,
+        "planner_confidence": plan.confidence,
+        "candidate_skills": [skill.metadata.skill_name for skill in candidate_skills],
+        "candidate_tools": [tool.tool_name for tool in candidate_tools],
+        "selected_skill_path": selected_skill_doc.path,
+        "selected_skill_body": selected_skill_doc.body,
+    }
+    return ParsedIntent(selected_tool, args, text), planner_trace
+
+
+def _seed_args_for_selected_tool(selected_tool: str, parsed_intent: ParsedIntent, raw_text: str) -> dict:
+    if parsed_intent.tool_name == selected_tool:
+        return dict(parsed_intent.args)
+    if selected_tool == "custom_plan_goal":
+        fallback = parse_intent(raw_text)
+        if fallback.tool_name == "custom_plan_goal":
+            return dict(fallback.args)
+        return {"goal": raw_text}
+    if selected_tool == "generate_plugin_tool":
+        return {"goal": raw_text}
+    if selected_tool == "answer_network_fact":
+        return {"question": raw_text}
+    return {}
+
+
+def _attach_planner_trace(result: AgentResult, planner_trace: dict | None) -> None:
+    if not planner_trace:
+        return
+    if isinstance(result.data, dict):
+        data = result.data
+    elif result.data is None:
+        data = {}
+    else:
+        data = {"result": result.data}
+    data["_planner"] = planner_trace
+    result.data = data
 
 
 def _help_commands() -> dict[str, list[str]]:

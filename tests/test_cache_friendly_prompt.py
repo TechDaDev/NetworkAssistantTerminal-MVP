@@ -7,7 +7,7 @@ def test_static_prompt_is_stable_and_sorted():
 
     assert first == second
     assert "TOOL_CAPABILITY_INDEX_VERSION: 1.0" in first
-    assert "SKILL_INDEX_VERSION: 1.0" in first
+    assert "SKILL_INDEX_VERSION: 1.1" in first
 
 
 def test_dynamic_context_does_not_alter_static_prompt():

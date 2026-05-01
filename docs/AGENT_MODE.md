@@ -12,6 +12,14 @@ Dry policy mode parses and evaluates policy without running tools:
 nat agent --dry-policy
 ```
 
+Trace mode for planner decisions:
+
+```text
+trace on
+trace status
+trace off
+```
+
 ## Examples
 
 Inventory:
@@ -90,6 +98,63 @@ nat skills show router_connection
 ```
 
 The tool capability index describes available tools, inputs, risk, forbidden uses, and follow-up tools. Skill files are operational playbooks that guide tool selection and workflow chaining.
+
+## Skill-First Selection Flow
+
+Agent mode now follows an OpenClaw-like skill-first path for natural-language requests:
+
+1. Run control command checks (`help`, `exit`, `clear`, `trace on/off/status`, tool/skill list).
+2. Run domain/safety guards first (public scans, raw SSH/shell, destructive intent).
+3. Retrieve relevant skill candidates from `skills/*.skill.md` using triggers, token overlap, and tool affinity.
+4. Retrieve relevant tool candidates from the tool capability index.
+5. Use the skill planner to choose exactly one skill and one registered tool.
+6. Load only the selected skill body for execution context.
+7. Validate the selected tool through agent policy before execution.
+8. Render human-readable output; raw JSON is trace-only.
+
+Deterministic parsing is still used for explicit CLI-like commands, emergency safety blocks, and non-LLM fallback.
+
+## Trace Visibility
+
+Normal output shows clean summaries, tables, and next safe actions.
+
+Trace mode additionally shows:
+
+- candidate skills
+- candidate tools
+- selected skill
+- selected tool
+- planner reason and confidence
+- policy decision
+- raw tool payload
+
+## Adding a New Skill
+
+Use YAML front matter with a strong natural-language description:
+
+```yaml
+---
+skill_name: example_skill
+display_name: Example Skill
+description: Use this skill when the user asks for ...
+category: diagnostics
+risk_level: low
+tools:
+	- show_devices
+triggers:
+	- show devices
+requires_confirmation: []
+forbidden:
+	- unsafe_action
+---
+```
+
+Guidelines:
+
+- Keep the description specific and request-oriented.
+- List only tools that the skill is allowed to invoke.
+- Include realistic trigger phrases users actually type.
+- Keep forbidden intents explicit so planner and reviewers can enforce policy.
 
 ## Risk Levels
 

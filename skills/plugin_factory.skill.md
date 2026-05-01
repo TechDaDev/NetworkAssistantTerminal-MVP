@@ -1,6 +1,7 @@
 ---
 skill_name: plugin_factory
 display_name: Plugin Factory
+description: Use this skill only when no existing registered skill or tool can satisfy a reusable local parser, planner, validator, reporter, or diagnostic capability and plugin generation is genuinely required.
 category: plugin
 risk_level: medium
 tools:

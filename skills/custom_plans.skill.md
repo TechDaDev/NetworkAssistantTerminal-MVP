@@ -1,6 +1,7 @@
 ---
 skill_name: custom_plans
 display_name: Custom ChangePlans
+description: Use this skill when the request is an advanced Cisco IOS or MikroTik RouterOS change that is not covered by fixed planners, and the agent must generate a governed custom ChangePlan with review, preflight, and execution safeguards.
 category: custom_plan
 risk_level: high
 tools:

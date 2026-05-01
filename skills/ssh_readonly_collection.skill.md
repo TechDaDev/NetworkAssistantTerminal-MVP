@@ -1,6 +1,7 @@
 ---
 skill_name: ssh_readonly_collection
 display_name: SSH Read-Only Collection
+description: Use this skill for credential-safe read-only SSH connectivity checks and allowlisted command collection on known devices, without allowing raw SSH command execution or configuration changes.
 category: ssh_readonly
 risk_level: medium
 tools:

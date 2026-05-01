@@ -1,6 +1,7 @@
 ---
 skill_name: cisco_operations
 display_name: Cisco Operations
+description: Use this skill when the user asks for Cisco switch or router configuration planning such as VLAN creation, access-port setup, interface description changes, routing, or ACL-related planning tasks that must follow the governed plan lifecycle.
 category: planning
 risk_level: high
 tools:

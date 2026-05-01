@@ -1,6 +1,7 @@
 ---
 skill_name: lab_release
 display_name: Lab and Release
+description: Use this skill for operational readiness checks such as doctor, release readiness, lab checklist validation, and safe environment inspection commands that do not change live network devices.
 category: lab
 risk_level: low
 tools:

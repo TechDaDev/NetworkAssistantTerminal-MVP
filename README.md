@@ -58,18 +58,35 @@ This version can:
 - Create local configuration change plans with proposed and rollback commands.
 - Create DeepSeek-generated custom Cisco IOS and MikroTik RouterOS command plans that are saved, validated, approved, backed up, executed, verified, and rolled back through the existing lifecycle.
 - Generate pure local plugin tools for planner, parser, validator, reporter, and diagnostic tasks, then validate and approve them before use.
-- Use a structured tool capability index and operational skill registry so the agent can choose existing network tools, chain follow-up actions, and avoid plugin generation for normal router/scanning workflows.
+- Use a structured tool capability index and operational skill registry so the agent can select one best-fit skill first, then one allowed tool, chain follow-up actions, and avoid plugin generation for normal router/scanning workflows.
 - Review, approve, reject, archive, and preflight-check change plans before execution eligibility.
 - Execute only approved, preflight-passed Cisco IOS VLAN plans and MikroTik address plans through an exact confirmation gate.
 - Verify executed plans, explicitly save Cisco IOS config with `write memory`, and manually rollback supported plans with confirmation.
 - Validate Cisco IOSv/IOSvL2 and MikroTik CHR lab readiness without running SSH or executing plans.
 - Run an offline pytest safety suite for command validators, policy blocks, chat refusals, and URL/LLM safety.
-- Run an interactive deterministic agent mode for safe natural-language network tasks.
+- Run an interactive skill-first agent mode for safe natural-language network tasks.
 - Build evidence-based local topology snapshots from inventory, gateway, CDP/LLDP, and ARP evidence.
 - Add local-only manual topology nodes, edges, and notes to correct or annotate topology snapshots.
 - Import, store, search, and show reusable local device knowledge documents for read-only RAG context.
 - Save scan results to `data/network_assistant.db`.
 - Print clean terminal reports.
+
+## OpenClaw-Like Skill Selection
+
+Natural-language routing in agent mode is now skill-first:
+
+1. Domain/safety guards run first.
+2. Relevant skills are retrieved from `skills/*.skill.md`.
+3. Relevant tools are retrieved from the tool capability index.
+4. The planner selects exactly one skill and one tool from known options.
+5. Only the selected skill body is loaded for execution context.
+6. Policy remains the final authority before execution.
+
+Deterministic parsing is still used for explicit CLI-style commands, emergency safety blocks, and fallback when LLM planning is disabled.
+
+Trace mode (`trace on`) shows candidate skills/tools, selected skill/tool, planner reason, and raw payloads for debugging. Normal mode shows only human-readable summaries and tables.
+
+To add a new skill, include strong YAML front matter fields (`skill_name`, `display_name`, `description`, `category`, `risk_level`, `tools`, `triggers`, `requires_confirmation`, `forbidden`) and keep the description focused on real user request language.
 
 This version does not:
 

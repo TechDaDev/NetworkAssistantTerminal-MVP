@@ -52,3 +52,13 @@ class AgentToolResult(BaseModel):
     details: dict = Field(default_factory=dict)
     suggested_commands: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)
+
+
+class SkillPlan(BaseModel):
+    selected_skill: str
+    selected_tool: str
+    reason: str
+    required_inputs: list[str] = Field(default_factory=list)
+    followup_tools: list[str] = Field(default_factory=list)
+    risk_level: str = "low"
+    confidence: float = 0.0

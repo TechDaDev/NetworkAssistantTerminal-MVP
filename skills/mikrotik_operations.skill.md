@@ -1,6 +1,7 @@
 ---
 skill_name: mikrotik_operations
 display_name: MikroTik Operations
+description: Use this skill when the user asks for MikroTik planning tasks such as address or DHCP setup, failover, NAT, firewall, or routing changes that must be performed through governed plans and confirmations.
 category: planning
 risk_level: high
 tools:

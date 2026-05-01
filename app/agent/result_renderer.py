@@ -84,6 +84,8 @@ def print_result(result: AgentResult) -> None:
     result_type = _infer_result_type(result)
     if result.data:
         _dispatch_renderer(result_type, result)
+    if _trace_enabled:
+        _render_trace_planner(result)
     if _trace_enabled and result.data:
         _print_raw(result.data)
 
@@ -419,3 +421,30 @@ def _print_raw(data: dict | list) -> None:
     if len(compact) > 4000:
         compact = compact[:4000] + "\n... truncated ..."
     console.print(Panel(JSON(compact), title="[dim]Raw tool details (trace mode)[/dim]", border_style="dim"))
+
+
+def _render_trace_planner(result: AgentResult) -> None:
+    if not isinstance(result.data, dict):
+        return
+    planner = result.data.get("_planner")
+    if not isinstance(planner, dict):
+        return
+
+    info = Table.grid(padding=(0, 2))
+    info.add_column(style="bold magenta")
+    info.add_column()
+    info.add_row("Selected skill:", str(planner.get("selected_skill", "--")))
+    info.add_row("Selected tool:", str(planner.get("selected_tool", "--")))
+    info.add_row("Reason:", str(planner.get("planner_reason", "--")))
+    info.add_row("Confidence:", str(planner.get("planner_confidence", "--")))
+    if result.policy_decision:
+        info.add_row("Policy decision:", result.policy_decision)
+
+    candidates = planner.get("candidate_skills") or []
+    if candidates:
+        info.add_row("Candidate skills:", ", ".join(str(item) for item in candidates))
+    tools = planner.get("candidate_tools") or []
+    if tools:
+        info.add_row("Candidate tools:", ", ".join(str(item) for item in tools))
+
+    console.print(Panel(info, title="Planner Trace", border_style="magenta"))

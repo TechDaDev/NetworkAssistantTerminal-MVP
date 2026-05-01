@@ -1,6 +1,7 @@
 ---
 skill_name: snapshots_backup
 display_name: Snapshots and Backup
+description: Use this skill when the user wants pre-change backups, snapshot listing and export, or deterministic restore guidance to protect rollback safety without automatically applying restore commands.
 category: snapshot
 risk_level: medium
 tools:

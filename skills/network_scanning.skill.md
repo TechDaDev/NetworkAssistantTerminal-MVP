@@ -1,6 +1,7 @@
 ---
 skill_name: network_scanning
 display_name: Network Scanning
+description: Use this skill when the user wants to discover local devices, scan the LAN, find connected clients, identify active private IPs, view open management ports, or ask basic discovery questions like what devices are connected.
 category: scan
 risk_level: medium
 tools:

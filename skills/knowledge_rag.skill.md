@@ -1,6 +1,7 @@
 ---
 skill_name: knowledge_rag
 display_name: Knowledge and RAG
+description: Use this skill when the user wants to search, list, show, or fetch documentation into local knowledge so the assistant can answer based on saved references without uncontrolled browsing.
 category: knowledge
 risk_level: low
 tools:

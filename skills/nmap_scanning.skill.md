@@ -1,6 +1,7 @@
 ---
 skill_name: nmap_scanning
 display_name: Controlled Nmap Scanning
+description: Use this skill when deeper service inspection is needed with approved nmap profiles on private targets, while enforcing strict safety controls against raw flags, public targets, and aggressive scan modes.
 category: nmap
 risk_level: medium
 tools:

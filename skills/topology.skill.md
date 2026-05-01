@@ -1,6 +1,7 @@
 ---
 skill_name: topology
 display_name: Topology
+description: Use this skill when the user wants topology building, explanation, export, risk checks, or report generation from local evidence and optional manual overlays, with no direct device configuration changes.
 category: topology
 risk_level: low
 tools:

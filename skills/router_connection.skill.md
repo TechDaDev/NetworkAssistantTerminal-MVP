@@ -1,6 +1,7 @@
 ---
 skill_name: router_connection
 display_name: Router / Gateway Connection
+description: Use this skill when the user wants to connect to the default gateway router, inspect router status, collect read-only information, or troubleshoot router access with safe credential and confirmation handling.
 category: ssh_readonly
 risk_level: medium
 tools:

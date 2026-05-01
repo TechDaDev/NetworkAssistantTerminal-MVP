@@ -1,6 +1,7 @@
 ---
 skill_name: troubleshooting
 display_name: Troubleshooting
+description: Use this skill for operational blockers such as missing credentials, disabled features, tool availability issues, preflight warnings, and validation failures where the user needs safe recovery guidance.
 category: diagnostics
 risk_level: low
 tools:

@@ -1,6 +1,7 @@
 ---
 skill_name: safety_policy
 display_name: Safety Policy
+description: Use this skill when the conversation involves confirmations, high-risk lifecycle enforcement, blocked actions, or policy guardrails that must prevent unsafe execution, destructive commands, and public-target abuse.
 category: safety
 risk_level: high
 tools:

@@ -1,6 +1,7 @@
 ---
 skill_name: diagnostics
 display_name: Diagnostics
+description: Use this skill when the user wants troubleshooting summaries, device diagnostics, connectivity checks, management-port analysis, or quick factual answers about the local gateway and subnet without making device changes.
 category: diagnostics
 risk_level: low
 tools:
